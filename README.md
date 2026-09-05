@@ -2,7 +2,9 @@
 
 A single-file, dependency-free noise generator that turns light into sound.
 
-Open `index.html` in any modern browser. Nothing to install, nothing fetched.
+**Try it:** https://silentoplayz.github.io/static-noise/
+
+Or open `index.html` in any modern browser. Nothing to install, nothing fetched.
 
 ## The model
 

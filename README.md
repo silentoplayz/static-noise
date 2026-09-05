@@ -23,8 +23,6 @@ Or open `index.html` in any modern browser. Nothing to install, nothing fetched.
 * Lock-screen and media-key controls through the Media Session API.
 * No network requests, no analytics, no accounts.
 
-See [PRODUCT.md](PRODUCT.md) for the plan beyond the code.
-
 ## The model
 
 One spectrum drives everything: a spectral power distribution (SPD) over

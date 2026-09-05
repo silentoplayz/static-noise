@@ -1,0 +1,17 @@
+{
+  "name": "Static — turn light into sound",
+  "short_name": "Static",
+  "description": "Pick a colour or shape a light spectrum, from candle flames to hydrogen, and hear it as noise. Free, private, works offline.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e0f12",
+  "theme_color": "#0e0f12",
+  "categories": ["music", "health", "education"],
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

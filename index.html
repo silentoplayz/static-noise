@@ -4,6 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Static</title>
+<meta name="description" content="Turn light into sound. Pick a colour or shape a light spectrum, from candle flames to hydrogen, and hear it as noise. Free, private, works offline.">
+<meta name="theme-color" content="#0e0f12">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Static — turn light into sound">
+<meta property="og:description" content="Pick a colour or shape a light spectrum, from candle flames to hydrogen, and hear it as noise. Free, private, works offline.">
+<meta property="og:url" content="https://silentoplayz.github.io/static-noise/">
+<meta property="og:image" content="https://silentoplayz.github.io/static-noise/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Static — turn light into sound">
+<meta name="twitter:description" content="Pick a colour or shape a light spectrum and hear it as noise. Free, private, works offline.">
+<meta name="twitter:image" content="https://silentoplayz.github.io/static-noise/assets/og.png">
 <style>
   :root {
     --bg: #0e0f12; --panel: #171a1f; --ink: #e8e9ec; --muted: #8d919a;
@@ -144,7 +160,22 @@
   .share span { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
   .hint { margin: 0; font-size: 0.8rem; color: var(--muted); text-align: center; max-width: 72ch; justify-self: center; }
   kbd { font: inherit; font-size: 0.75rem; padding: 1px 5px; border-radius: 4px; background: rgb(255 255 255 / 0.08); }
-  @media (prefers-reduced-motion: reduce) { body, .play, .ref-dot { transition: none; } }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+  .toolbar button, .toolbar .field { font: inherit; font-size: 0.85rem; color: var(--muted); background: var(--panel);
+    border: 1px solid rgb(255 255 255 / 0.08); border-radius: 999px; padding: 6px 12px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; }
+  .toolbar button:hover, .toolbar button:focus-visible { color: var(--ink); outline: none; }
+  .toolbar .field { cursor: default; }
+  .toolbar select { font: inherit; font-size: 0.85rem; background: transparent; color: var(--ink); border: 0; outline: none; }
+  .toolbar select option { background: var(--panel); }
+  .toolbar output { font-variant-numeric: tabular-nums; color: var(--ink); min-width: 4.5ch; }
+  .toolbar a { color: var(--muted); font-size: 0.85rem; text-decoration: none; padding: 6px 4px; }
+  .toolbar a:hover { color: var(--ink); }
+  .toast { position: fixed; left: 50%; bottom: 24px; translate: -50% 0; background: var(--ink); color: var(--bg);
+    padding: 8px 14px; border-radius: 999px; font-size: 0.9rem; opacity: 0; transition: opacity 200ms; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .busy { position: fixed; top: 0; left: 0; height: 2px; width: 100%; background: var(--accent); opacity: 0; transition: opacity 150ms; }
+  .busy.show { opacity: 0.8; }
+  @media (prefers-reduced-motion: reduce) { body, .play, .ref-dot, .toast { transition: none; } }
 </style>
 </head>
 <body>
@@ -164,6 +195,15 @@
       <output for="vol" id="volOut">45</output>
     </div>
   </header>
+
+  <div class="toolbar">
+    <button type="button" id="share" title="Copy a link that reopens exactly this sound">Share link</button>
+    <span class="field"><label for="sleep">Sleep timer</label>
+      <select id="sleep"><option value="0">off</option><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option><option value="90">90 min</option></select>
+      <output id="sleepOut" hidden></output></span>
+    <button type="button" id="wav" title="Render one minute of this sound as a 48 kHz stereo WAV file">Download 1-min WAV</button>
+    <a href="https://github.com/silentoplayz/static-noise" rel="noopener">Source on GitHub</a>
+  </div>
 
   <!-- ===================== Colour mode ===================== -->
   <section id="modeColour" role="tabpanel" aria-labelledby="tabColour" class="grid2">
@@ -279,8 +319,11 @@
   <p class="hint">One model throughout: a spectral power distribution over wavelength is laid onto 20 Hz–20 kHz (both logarithmic, long wavelength
     to low frequency) and becomes the noise's power envelope. The colour picker writes a three-band metamer of the picked colour into the
     visible band; the spectrum mode writes physical sources or your drawing. Colour seen is always computed back from the spectrum with the
-    CIE 1931 colour matching functions. <kbd>Space</kbd> plays / stops when a control has focus.</p>
+    CIE 1931 colour matching functions. <kbd>Space</kbd> plays / stops when a control has focus.
+    Everything runs in your browser: nothing is uploaded, nothing is tracked, and the page works offline once installed.</p>
 </main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="busy" id="busy" aria-hidden="true"></div>
 
 <script>
 (() => {
@@ -470,64 +513,103 @@
   });
 
   // =====================================================================================
-  //  Synthesis: fixed random phases, envelope from the spectrum, seamless loop, crossfade
+  //  Synthesis. The DSP lives in a source string so it can run in a Web Worker (no UI stalls)
+  //  and, as a fallback, on the main thread. Stereo: two independent fixed phase sets.
   // =====================================================================================
-  function envelope(f) {
-    const fc = Math.min(FMAX, Math.max(FMIN, f));
-    let m = Math.pow(10, specAtLam(lamOfFreq(fc)) / 20);
-    if (f < FMIN) m *= (f / FMIN) * (f / FMIN);
-    if (f > FMAX) m *= f >= F_TOP ? 0 : 0.5 * (1 + Math.cos(Math.PI * (f - FMAX) / (F_TOP - FMAX)));
-    return m;
-  }
-  const loopLength = sr => Math.min(1 << 20, 1 << Math.ceil(Math.log2(sr * 5)));
-  let phases = null;
-  function fft(re, im, inverse) {
-    const n = re.length;
-    for (let i = 1, j = 0; i < n; i++) {
-      let bit = n >> 1;
-      for (; j & bit; bit >>= 1) j ^= bit;
-      j ^= bit;
-      if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
-    }
-    for (let len = 2; len <= n; len <<= 1) {
-      const half = len >> 1, ang = (inverse ? 2 : -2) * Math.PI / len;
-      const wr = Math.cos(ang), wi = Math.sin(ang);
-      for (let i = 0; i < n; i += len) {
-        let cr = 1, ci = 0;
-        for (let j = 0; j < half; j++) {
-          const a = i + j, b = a + half;
-          const xr = re[b], xi = im[b];
-          const vr = xr * cr - xi * ci, vi = xr * ci + xi * cr;
-          re[b] = re[a] - vr; im[b] = im[a] - vi;
-          re[a] += vr;        im[a] += vi;
-          const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+  const DSP_SOURCE = `
+    const FMIN = ${FMIN}, FMAX = ${FMAX}, F_TOP = ${F_TOP}, L_MIN = ${L_MIN}, L_MAX = ${L_MAX}, NPTS = ${NPTS};
+    let phases = [null, null];
+    function fft(re, im, inverse) {
+      const n = re.length;
+      for (let i = 1, j = 0; i < n; i++) {
+        let bit = n >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+      }
+      for (let len = 2; len <= n; len <<= 1) {
+        const half = len >> 1, ang = (inverse ? 2 : -2) * Math.PI / len;
+        const wr = Math.cos(ang), wi = Math.sin(ang);
+        for (let i = 0; i < n; i += len) {
+          let cr = 1, ci = 0;
+          for (let j = 0; j < half; j++) {
+            const a = i + j, b = a + half;
+            const xr = re[b], xi = im[b];
+            const vr = xr * cr - xi * ci, vi = xr * ci + xi * cr;
+            re[b] = re[a] - vr; im[b] = im[a] - vi;
+            re[a] += vr;        im[a] += vi;
+            const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+          }
         }
       }
+      if (inverse) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
     }
-    if (inverse) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+    // Deterministic phases (xorshift) so exports and sessions sound identical for the same spectrum.
+    function makePhases(n, seed) {
+      const p = new Float32Array(n); let x = seed >>> 0 || 1;
+      for (let k = 0; k < n; k++) { x ^= x << 13; x >>>= 0; x ^= x >> 17; x ^= x << 5; x >>>= 0; p[k] = (x / 4294967296) * 2 * Math.PI; }
+      return p;
+    }
+    function render({ spec, winLo, winHi, sr, N, level }) {
+      const specAt = i => { if (i <= 0) return spec[0]; if (i >= NPTS - 1) return spec[NPTS - 1]; const k = Math.floor(i), t = i - k; return spec[k] + (spec[k + 1] - spec[k]) * t; };
+      const idxOfLam = l => Math.log(L_MAX / l) / Math.log(L_MAX / L_MIN) * (NPTS - 1);
+      const lamOfFreq = f => winHi * Math.pow(winLo / winHi, Math.log(f / FMIN) / Math.log(FMAX / FMIN));
+      const envelope = f => {
+        const fc = Math.min(FMAX, Math.max(FMIN, f));
+        let m = Math.pow(10, specAt(idxOfLam(lamOfFreq(fc))) / 20);
+        if (f < FMIN) m *= (f / FMIN) * (f / FMIN);
+        if (f > FMAX) m *= f >= F_TOP ? 0 : 0.5 * (1 + Math.cos(Math.PI * (f - FMAX) / (F_TOP - FMAX)));
+        return m;
+      };
+      const env = new Float32Array(N / 2);
+      for (let k = 1; k < N / 2; k++) env[k] = envelope(k * sr / N);
+      const out = [];
+      for (let ch = 0; ch < 2; ch++) {
+        if (!phases[ch] || phases[ch].length !== N / 2) phases[ch] = makePhases(N / 2, 0x9E3779B9 + ch * 0x85EBCA6B);
+        const ph = phases[ch], re = new Float64Array(N), im = new Float64Array(N);
+        for (let k = 1; k < N / 2; k++) { const m = env[k], c = m * Math.cos(ph[k]), s = m * Math.sin(ph[k]); re[k] = c; im[k] = s; re[N - k] = c; im[N - k] = -s; }
+        fft(re, im, true);
+        let sum = 0, peak = 0;
+        for (let i = 0; i < N; i++) { const v = re[i]; sum += v * v; const a = Math.abs(v); if (a > peak) peak = a; }
+        const d = new Float32Array(N);
+        if (sum >= 1e-12) {
+          let gain = 0.16 / Math.sqrt(sum / N);
+          if (peak * gain > 0.95) gain = 0.95 / peak;
+          gain *= level;
+          for (let i = 0; i < N; i++) d[i] = re[i] * gain;
+        }
+        out.push(d);
+      }
+      return out;
+    }
+    if (typeof self !== 'undefined' && typeof importScripts === 'function') {
+      self.onmessage = e => { const out = render(e.data); self.postMessage({ id: e.data.id, L: out[0], R: out[1] }, [out[0].buffer, out[1].buffer]); };
+    }
+  `;
+  const loopLength = sr => Math.min(1 << 20, 1 << Math.ceil(Math.log2(sr * 5)));
+  let worker = null, workerBroken = false, mainRender = null;
+  function mainThreadRender(job) {
+    if (!mainRender) mainRender = new Function(DSP_SOURCE + '; return render;')();
+    return mainRender(job);
   }
-  function renderNoise(ctx, level) {
-    const sr = ctx.sampleRate, N = loopLength(sr);
-    if (!phases || phases.length !== N / 2) {
-      phases = new Float32Array(N / 2);
-      for (let k = 0; k < phases.length; k++) phases[k] = Math.random() * 2 * Math.PI;
-    }
-    const re = new Float64Array(N), im = new Float64Array(N);
-    for (let k = 1; k < N / 2; k++) {
-      const m = envelope(k * sr / N);
-      const c = m * Math.cos(phases[k]), s = m * Math.sin(phases[k]);
-      re[k] = c; im[k] = s; re[N - k] = c; im[N - k] = -s;
-    }
-    fft(re, im, true);
-    let sum = 0, peak = 0;
-    for (let i = 0; i < N; i++) { const v = re[i]; sum += v * v; const a = Math.abs(v); if (a > peak) peak = a; }
-    const buf = ctx.createBuffer(1, N, sr), d = buf.getChannelData(0);
-    if (sum < 1e-12) return buf;
-    let gain = 0.16 / Math.sqrt(sum / N);
-    if (peak * gain > 0.95) gain = 0.95 / peak;
-    gain *= level;
-    for (let i = 0; i < N; i++) d[i] = re[i] * gain;
-    return buf;
+  let jobId = 0, inFlight = null, queued = null;
+  function renderAsync(job) {
+    return new Promise(resolve => {
+      if (!workerBroken && !worker) {
+        try {
+          worker = new Worker(URL.createObjectURL(new Blob([DSP_SOURCE], { type: 'text/javascript' })));
+          worker.onerror = () => { workerBroken = true; worker = null; };
+        } catch { workerBroken = true; }
+      }
+      if (!worker) { const [L, R] = mainThreadRender(job); resolve([L, R]); return; }
+      const id = ++jobId;
+      const onMsg = e => { if (e.data.id !== id) return; worker.removeEventListener('message', onMsg); resolve([e.data.L, e.data.R]); };
+      worker.addEventListener('message', onMsg);
+      worker.postMessage({ ...job, id }, [job.spec.buffer]);
+    });
+  }
+  function currentJob(sr, N, level) {
+    return { spec: Float32Array.from(spec), winLo: win.lo, winHi: win.hi, sr, N, level };
   }
 
   let ac = null, master = null, analyser = null, current = null, playing = false, regenTimer = 0;
@@ -553,10 +635,26 @@
     node.src.stop(t + XFADE + 0.05);
   }
   const currentLevel = () => (mode === 'colour' ? val : 1);
+  // Render requests coalesce: one in flight, at most one queued, always the latest state.
+  async function regenerate() {
+    if (!playing || !ac) return;
+    if (inFlight) { queued = true; return; }
+    busy.classList.add('show');
+    const N = loopLength(ac.sampleRate);
+    inFlight = renderAsync(currentJob(ac.sampleRate, N, currentLevel()));
+    const [L, R] = await inFlight;
+    inFlight = null;
+    if (playing) {
+      const buf = ac.createBuffer(2, N, ac.sampleRate);
+      buf.copyToChannel(L, 0); buf.copyToChannel(R, 1);
+      swapTo(buf);
+    }
+    if (queued) { queued = false; regenerate(); } else busy.classList.remove('show');
+  }
   function scheduleRegen() {
     if (!playing) return;
     clearTimeout(regenTimer);
-    regenTimer = setTimeout(() => swapTo(renderNoise(ac, currentLevel())), 120);
+    regenTimer = setTimeout(regenerate, 120);
   }
   async function togglePlay() {
     ensureAudio();
@@ -564,8 +662,64 @@
     playing = !playing;
     playBtn.setAttribute('aria-pressed', String(playing));
     playBtn.setAttribute('aria-label', playing ? 'Stop' : 'Play');
-    if (playing) { swapTo(renderNoise(ac, currentLevel())); requestAnimationFrame(drawAudio); }
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+    if (playing) { regenerate(); requestAnimationFrame(drawAudio); }
     else { clearTimeout(regenTimer); if (current) { fadeOut(current, ac.currentTime); current = null; } }
+  }
+
+  // ---- sleep timer: fade over 20 s at the end ----
+  let sleepEnd = 0, sleepTick = 0;
+  function setSleep(minutes) {
+    clearInterval(sleepTick); sleepEnd = 0; sleepOut.hidden = true;
+    if (!(minutes > 0)) return;
+    sleepEnd = Date.now() + minutes * 60000;
+    sleepOut.hidden = false;
+    const tick = () => {
+      const left = Math.max(0, sleepEnd - Date.now());
+      const m = Math.floor(left / 60000), sec = Math.floor((left % 60000) / 1000);
+      sleepOut.value = `${m}:${String(sec).padStart(2, '0')}`;
+      if (left <= 20000 && playing && master && !master._fading) {
+        master._fading = true;
+        master.gain.setTargetAtTime(0, ac.currentTime, 5);
+      }
+      if (left <= 0) {
+        clearInterval(sleepTick); sleepOut.hidden = true; sleepSel.value = '0';
+        if (playing) togglePlay();
+        if (master) { // a setTargetAtTime already running survives cancelScheduledValues, so hold-and-cancel first
+          const g = master.gain, t = ac.currentTime;
+          if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(t); else g.cancelScheduledValues(0);
+          g.setValueAtTime(volToGain(vol.value), t + 0.05); master._fading = false;
+        }
+      }
+    };
+    tick(); sleepTick = setInterval(tick, 500);
+  }
+
+  // ---- WAV export: one minute, 48 kHz, 16-bit stereo, tiled from the seamless loop ----
+  function exportWav() {
+    const sr = 48000, N = loopLength(sr), loops = Math.ceil(60 * sr / N);
+    busy.classList.add('show');
+    setTimeout(() => {
+      const [L, R] = mainThreadRender(currentJob(sr, N, currentLevel()));
+      const frames = N * loops, bytes = 44 + frames * 4, buf = new ArrayBuffer(bytes), v = new DataView(buf);
+      const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+      str(0, 'RIFF'); v.setUint32(4, bytes - 8, true); str(8, 'WAVE'); str(12, 'fmt '); v.setUint32(16, 16, true);
+      v.setUint16(20, 1, true); v.setUint16(22, 2, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 4, true);
+      v.setUint16(32, 4, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, frames * 4, true);
+      let o = 44;
+      for (let l = 0; l < loops; l++) for (let i = 0; i < N; i++) {
+        v.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(L[i] * 32767))), true);
+        v.setInt16(o + 2, Math.max(-32768, Math.min(32767, Math.round(R[i] * 32767))), true);
+        o += 4;
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+      a.download = `static-${currentName().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'noise'}.wav`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      busy.classList.remove('show');
+      toast(`Saved ${Math.round(frames / sr)} s of stereo WAV`);
+    }, 30);
   }
 
   // =====================================================================================
@@ -585,6 +739,10 @@
   const seenSwatch = $('seenSwatch'), seenName = $('seenName'), seenHex = $('seenHex'), xyEl = $('xy'), noteEl = $('note');
   const playBtn = $('play'), vol = $('vol'), volOut = $('volOut');
   const capLeft = $('capLeft'), capRight = $('capRight');
+  const busy = $('busy'), toastEl = $('toast'), sleepSel = $('sleep'), sleepOut = $('sleepOut');
+  let toastTimer = 0;
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200); }
+  const currentName = () => mode === 'colour' ? `${hex8(hsvToRgb(hue, sat, val))} ${pickName.textContent}` : (activeSource || 'Custom spectrum');
 
   // ---- colour disc ----
   for (const [deg, text] of [[0, 'Red'], [60, 'Yellow'], [120, 'Green'], [180, 'Cyan'], [240, 'Blue'], [300, 'Magenta']]) {
@@ -617,6 +775,7 @@
     hue = h; sat = s; val = v;
     const rgb = hsvToRgb(h, s, v), lin1 = hsvToRgb(h, s, 1).map(srgbToLin);
     writeColourSpectrum(lin1);
+    urlState = { m: 'colour', c: hex8(rgb).slice(1) };
 
     handle.style.left = `${50 + discX(h, s) * 50}%`; handle.style.top = `${50 + discY(h, s) * 50}%`;
     const hex = hex8(rgb);
@@ -720,7 +879,9 @@
   $('normalise').addEventListener('click', () => { normalise(); setSource(activeSource); });
   $('fromColour').addEventListener('click', () => { writeColourSpectrum(hsvToRgb(hue, sat, 1).map(srgbToLin)); setSource(`Colour ${hex8(hsvToRgb(hue, sat, 1))}`); });
   function setTemp(T) { tempIn.value = sliderOfTemp(T); applyTemp(T); }
+  let lastTemp = 5772;
   function applyTemp(T) {
+    lastTemp = T;
     setBlackbody(T);
     tempOut.value = `${Math.round(T).toLocaleString()} K`;
     const peak = WIEN_B / T * 1e9;
@@ -732,6 +893,9 @@
   tempIn.addEventListener('input', () => applyTemp(tempOfSlider(+tempIn.value)));
   function setSource(label) {
     activeSource = label;
+    if (label && /^(Candle|Bulb|Sun|Sirius|Rigel|O star|Blackbody)/.test(label)) urlState = { m: 'spectrum', bb: String(Math.round(lastTemp)) };
+    else if (label && (CLASSICS.some(c => c.name === label) || /lines$/.test(label))) urlState = { m: 'spectrum', src: label };
+    else urlState = { m: 'spectrum', s: 'custom' };
     for (const [l, b] of srcChipEls) b.setAttribute('aria-current', String(l === label));
     commit();
   }
@@ -775,6 +939,78 @@
     drawEditor();
     if (!playing) drawAudio();
     scheduleRegen();
+    clearTimeout(urlTimer); urlTimer = setTimeout(writeUrl, 250);
+    if ('mediaSession' in navigator) {
+      let artwork = [];
+      try { artwork = [{ src: new URL('assets/icon-512.png', location.href).href, sizes: '512x512', type: 'image/png' }]; } catch {}
+      try { navigator.mediaSession.metadata = new MediaMetadata({ title: currentName(), artist: 'Static', album: 'Light as sound', artwork }); } catch {}
+    }
+  }
+
+  // ---- shareable state in the URL hash ----
+  let urlState = { m: 'colour', c: 'ffffff' }, urlTimer = 0;
+  const b64u = u8 => btoa(String.fromCharCode(...u8)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64u = str => Uint8Array.from(atob(str.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  const ENC_PTS = 512; // 8-bit points in the share link (about 680 characters); 256 smeared narrow lines
+  function encodeSpectrum() {
+    const out = new Uint8Array(ENC_PTS), step = NPTS / ENC_PTS;
+    for (let i = 0; i < ENC_PTS; i++) { let acc = 0; for (let k = 0; k < step; k++) acc += spec[i * step + k]; out[i] = Math.round((acc / step - DB_FLOOR) / -DB_FLOOR * 255); }
+    return b64u(out);
+  }
+  function decodeSpectrum(str) {
+    const pts = unb64u(str); if (pts.length !== ENC_PTS && pts.length !== 256) return false;
+    const n = pts.length;
+    for (let i = 0; i < NPTS; i++) {
+      const x = i / NPTS * n - 0.5, k = Math.max(0, Math.min(n - 1, Math.floor(x))), t = Math.max(0, Math.min(1, x - k));
+      const a = pts[k] / 255 * -DB_FLOOR + DB_FLOOR, b = pts[Math.min(n - 1, k + 1)] / 255 * -DB_FLOOR + DB_FLOOR;
+      spec[i] = a + (b - a) * t;
+    }
+    return true;
+  }
+  let lastWrittenHash = '';
+  function writeUrl() {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(urlState)) q.set(k, k === 's' ? encodeSpectrum() : v);
+    q.set('w', win === WINDOWS.visible ? 'vis' : 'ext');
+    lastWrittenHash = '#' + q.toString();
+    history.replaceState(null, '', lastWrittenHash);
+  }
+  // A link pasted into an already-open tab (or back/forward) should apply too.
+  window.addEventListener('hashchange', () => { if (location.hash !== lastWrittenHash) { try { readUrl(); } catch {} } });
+  function readUrl() {
+    if (!location.hash || location.hash.length < 2) return false;
+    const q = new URLSearchParams(location.hash.slice(1));
+    const w = q.get('w') === 'ext' ? 'extended' : 'visible';
+    if (q.get('m') === 'spectrum') {
+      setMode('spectrum'); setWindow(w);
+      if (q.get('bb')) { const T = Math.max(T_MIN, Math.min(T_MAX, +q.get('bb'))); setTemp(T); return true; }
+      if (q.get('src')) { const label = q.get('src'); const c = CLASSICS.find(c => c.name === label); const ln = label.replace(/ lines$/, '');
+        if (c) { setClassic(c); setSource(c.name); return true; } if (LINES[ln]) { setLines(ln); setSource(`${ln} lines`); return true; } }
+      if (q.get('s') && decodeSpectrum(q.get('s'))) { setSource(null); return true; }
+      return false;
+    }
+    if (q.get('c')) { setMode('colour'); setWindow(w); if (applyHex(q.get('c'))) return true; }
+    return false;
+  }
+  $('share').addEventListener('click', async () => {
+    writeUrl();
+    const url = location.href, title = `Static — ${currentName()}`;
+    try {
+      if (navigator.share) { await navigator.share({ title, url }); return; }
+      await navigator.clipboard.writeText(url); toast('Link copied');
+    } catch (e) { if (e && e.name === 'AbortError') return; window.prompt('Copy this link:', url); }
+  });
+  sleepSel.addEventListener('change', () => setSleep(parseFloat(sleepSel.value)));
+  $('wav').addEventListener('click', exportWav);
+  if ('mediaSession' in navigator) {
+    try {
+      navigator.mediaSession.setActionHandler('play', () => { if (!playing) togglePlay(); });
+      navigator.mediaSession.setActionHandler('pause', () => { if (playing) togglePlay(); });
+      navigator.mediaSession.setActionHandler('stop', () => { if (playing) togglePlay(); });
+    } catch {}
+  }
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   }
 
   // =====================================================================================
@@ -910,7 +1146,9 @@
   sizeCanvas(editor, ed); sizeCanvas(audioCv, au);
   setMode('colour'); setWindow('visible');
   tempIn.value = sliderOfTemp(5772); tempOut.value = '5,772 K';
-  setColour(0, 0, 1, false);
+  let restored = false;
+  try { restored = readUrl(); } catch { restored = false; }
+  if (!restored) setColour(0, 0, 1, false);
 })();
 </script>
 </body>

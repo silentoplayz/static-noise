@@ -12,6 +12,19 @@ Or open `index.html` in any modern browser. Nothing to install, nothing fetched.
 
 ![Static: spectrum mode with hydrogen's emission lines, from Lyman-alpha in the ultraviolet through the Balmer series to the Paschen lines in the infrared, each becoming a narrow band of noise](assets/screenshot-hydrogen.png)
 
+## Features
+
+* Stereo noise rendered off the main thread in a Web Worker, so dragging never stutters.
+* Sleep timer with a gentle fade (15 to 90 minutes).
+* Share links: the address bar always holds a link that reopens exactly this sound,
+  including a hand-drawn spectrum.
+* Download one minute of 48 kHz stereo WAV, tiled from the seamless loop.
+* Installable as an app and works offline (web app manifest plus service worker).
+* Lock-screen and media-key controls through the Media Session API.
+* No network requests, no analytics, no accounts.
+
+See [PRODUCT.md](PRODUCT.md) for the plan beyond the code.
+
 ## The model
 
 One spectrum drives everything: a spectral power distribution (SPD) over
@@ -74,5 +87,7 @@ keeps the colour's spectrum as the starting point.
 ## Layout
 
 * `index.html` — the app.
+* `manifest.webmanifest`, `sw.js` — installable, offline-capable shell.
+* `assets/` — icons, social card and screenshots.
 * `archive/colour-first.html` — earlier colour-picker-only version.
 * `archive/spectrum-first.html` — earlier spectrum-only version.

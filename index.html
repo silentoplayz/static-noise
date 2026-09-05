@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Static</title>
+<style>
+  :root {
+    --bg: #0e0f12; --panel: #171a1f; --ink: #e8e9ec; --muted: #8d919a;
+    --accent: rgb(255 255 255);
+    --disc: min(72vw, 280px);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(60% 40% at 50% 15%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+      var(--bg);
+    transition: background 300ms linear;
+    display: grid; place-items: start center;
+    padding: 24px 16px 40px;
+  }
+  main { width: 100%; min-width: 0; max-width: 880px; display: grid; gap: 18px; }
+  header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+  h1 { margin: 0; font-size: 1.15rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  h2 { margin: 0 0 6px; font-size: 0.78rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+  [hidden] { display: none !important; }
+
+  /* ---------- tabs + transport ---------- */
+  .tabs { display: inline-flex; background: var(--panel); border-radius: 999px; padding: 4px; justify-self: center; }
+  .tabs button {
+    font: inherit; font-size: 0.9rem; padding: 6px 16px; border-radius: 999px; border: 0;
+    background: transparent; color: var(--muted); cursor: pointer;
+  }
+  .tabs button[aria-selected="true"] { background: rgb(255 255 255 / 0.1); color: var(--ink); }
+  .tabs button:focus-visible { outline: 2px solid var(--ink); }
+  .transport { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; justify-self: end; min-width: 200px; }
+  .play {
+    width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--accent); color: #000;
+    display: grid; place-items: center; cursor: pointer; transition: transform 120ms;
+  }
+  .play:hover { transform: scale(1.05); }
+  .play:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  .play svg { width: 20px; height: 20px; fill: currentColor; }
+  .play .stop { display: none; }
+  .play[aria-pressed="true"] .stop { display: block; }
+  .play[aria-pressed="true"] .go { display: none; }
+  .transport input { width: 100%; accent-color: var(--accent); }
+  .transport output { font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; color: var(--muted); font-size: 0.9rem; }
+  @media (max-width: 640px) {
+    header { grid-template-columns: 1fr; justify-items: center; }
+    .transport { justify-self: stretch; }
+  }
+
+  /* ---------- cards ---------- */
+  .grid2 { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+  @media (min-width: 700px) { .grid2 { grid-template-columns: auto 1fr; } .grid2.even { grid-template-columns: 1fr 1fr; } }
+  .grid2 > * { min-width: 0; max-width: 100%; }
+  .card { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; align-content: start; }
+  .sub { color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  .sub b { color: var(--ink); font-weight: 600; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ---------- colour disc ---------- */
+  .picker { display: grid; gap: 12px; justify-items: center; }
+  .disc-wrap { padding: 28px 40px; }
+  .disc {
+    position: relative; width: var(--disc); aspect-ratio: 1; border-radius: 50%;
+    background:
+      radial-gradient(closest-side, #fff 0%, rgb(255 255 255 / 0) 100%),
+      conic-gradient(from 0deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 20px 60px rgb(0 0 0 / 0.45);
+    touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; outline: none;
+  }
+  .disc.dragging { cursor: grabbing; }
+  .disc:focus-visible .handle { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--ink); }
+  .handle {
+    position: absolute; --n: 24px; width: var(--n); height: var(--n);
+    margin: calc(var(--n) / -2) 0 0 calc(var(--n) / -2); border-radius: 50%;
+    background: var(--hs); border: 3px solid #fff;
+    box-shadow: 0 0 0 1.5px rgb(0 0 0 / 0.6), 0 4px 14px rgb(0 0 0 / 0.5); pointer-events: none;
+  }
+  .ref-dot {
+    position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%;
+    border: 2px solid rgb(0 0 0 / 0.55); background: rgb(255 255 255 / 0.9);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.6); pointer-events: none; transition: transform 120ms;
+  }
+  .ref-dot[data-active="true"] { transform: scale(1.5); }
+  .rim-label {
+    position: absolute; left: calc(50% + var(--ux) * 50%); top: calc(50% + var(--uy) * 50%);
+    translate: calc(-50% + var(--ux) * 50%) calc(-50% + var(--uy) * 50%);
+    margin: calc(var(--uy) * 8px) 0 0 calc(var(--ux) * 8px);
+    pointer-events: none; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap;
+  }
+  .slider { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; color: var(--muted); font-size: 0.9rem; }
+  .slider.two { grid-template-columns: 1fr auto; }
+  .slider input { width: 100%; accent-color: var(--accent); }
+  .slider output { font-variant-numeric: tabular-nums; min-width: 5ch; text-align: right; color: var(--ink); }
+  .valrow { width: var(--disc); }
+
+  .ident { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; }
+  .swatch { width: 56px; height: 56px; border-radius: 12px; background: var(--sw, var(--accent));
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2), 0 6px 20px color-mix(in srgb, var(--sw, var(--accent)) 35%, transparent); }
+  .name { font-size: 1.2rem; font-weight: 600; line-height: 1.15; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .field { display: flex; align-items: center; gap: 8px; background: rgb(255 255 255 / 0.04); border-radius: 10px; padding: 6px 10px; }
+  .field label { color: var(--muted); font-size: 0.85rem; }
+  input[type="text"] { width: 9ch; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: transparent; border: 0; color: var(--ink); outline: none; text-transform: lowercase; }
+  input[type="text"]:focus-visible { box-shadow: 0 1px 0 var(--ink); }
+  input[type="color"] { width: 34px; height: 26px; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 6px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button, .tools button {
+    font: inherit; font-size: 0.85rem; padding: 5px 11px; border-radius: 999px;
+    border: 1px solid rgb(255 255 255 / 0.12); background: rgb(255 255 255 / 0.04); color: var(--muted);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 7px; transition: color 120ms, border-color 120ms;
+  }
+  .chips button i { width: 11px; height: 11px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.3); }
+  .chips button small { color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+  .chips button:hover, .chips button:focus-visible, .tools button:hover, .tools button:focus-visible { color: var(--ink); outline: none; }
+  .chips button[aria-current="true"] { color: var(--ink); border-color: var(--ink); }
+  .tools { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* ---------- spectra ---------- */
+  .block { display: grid; gap: 6px; user-select: none; -webkit-user-select: none; }
+  .cap { display: flex; justify-content: space-between; gap: 12px; font-size: 0.75rem; color: var(--muted); padding: 0 2px; }
+  .cap .win { display: inline-flex; gap: 10px; align-items: center; }
+  .cap .win label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  .cap .win input { accent-color: var(--accent); margin: 0; }
+  canvas { display: block; width: 100%; border-radius: 10px; background: var(--panel); }
+  canvas.editor { height: 220px; touch-action: none; cursor: crosshair; }
+  canvas.audio { height: 150px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.75rem; color: var(--muted); padding: 0 2px; }
+  .legend i { display: inline-block; width: 18px; border-top: 2px dashed var(--accent); vertical-align: middle; margin-right: 6px; }
+  .legend i.solid { border-top-style: solid; }
+
+  .shares { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .share { background: rgb(255 255 255 / 0.04); border-radius: 8px; padding: 6px 8px; font-size: 0.85rem; }
+  .share b { display: block; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .share span { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .hint { margin: 0; font-size: 0.8rem; color: var(--muted); text-align: center; max-width: 72ch; justify-self: center; }
+  kbd { font: inherit; font-size: 0.75rem; padding: 1px 5px; border-radius: 4px; background: rgb(255 255 255 / 0.08); }
+  @media (prefers-reduced-motion: reduce) { body, .play, .ref-dot { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Static</h1>
+    <div class="tabs" role="tablist" aria-label="Input mode">
+      <button type="button" role="tab" id="tabColour" aria-selected="true" aria-controls="modeColour">Colour picker</button>
+      <button type="button" role="tab" id="tabSpectrum" aria-selected="false" aria-controls="modeSpectrum">Spectrum</button>
+    </div>
+    <div class="transport">
+      <button class="play" id="play" type="button" aria-pressed="false" aria-label="Play">
+        <svg class="go" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        <svg class="stop" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>
+      </button>
+      <input type="range" id="vol" min="0" max="100" value="45" aria-label="Volume">
+      <output for="vol" id="volOut">45</output>
+    </div>
+  </header>
+
+  <!-- ===================== Colour mode ===================== -->
+  <section id="modeColour" role="tabpanel" aria-labelledby="tabColour" class="grid2">
+    <div class="picker">
+      <div class="disc-wrap">
+        <div class="disc" id="disc" role="slider" tabindex="0"
+             aria-label="Colour picker. Left and right arrows change hue, up and down change saturation, page up and down change brightness."
+             aria-valuemin="0" aria-valuemax="359" aria-valuenow="0" aria-valuetext="White">
+          <div id="rim"></div>
+          <div id="dots"></div>
+          <div class="handle" id="handle"></div>
+        </div>
+      </div>
+      <div class="slider valrow">
+        <label for="val">Brightness</label>
+        <input type="range" id="val" min="0" max="100" value="100">
+        <output for="val" id="valOut">100%</output>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Picked colour</h2>
+      <div class="ident">
+        <div class="swatch" id="pickSwatch"></div>
+        <div>
+          <div class="name" id="pickName">Flat</div>
+          <div class="sub" id="bands"></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="hex">Hex</label>
+          <input type="text" id="hex" value="#ffffff" spellcheck="false" autocomplete="off" maxlength="7">
+          <input type="color" id="native" value="#ffffff" aria-label="Open system colour picker">
+        </div>
+        <span class="sub" id="hsv"></span>
+      </div>
+      <p class="sub" id="closest" style="margin:0"></p>
+      <div id="fitBlock">
+        <h2>Classic noises, at the colours that fit them best</h2>
+        <div class="chips" id="fitChips"></div>
+      </div>
+      <p class="sub" id="fitNote" style="margin:0" hidden>Classic fits are defined for the visible window. Switch the window back to compare.</p>
+    </div>
+  </section>
+
+  <!-- ===================== Spectrum mode ===================== -->
+  <section id="modeSpectrum" role="tabpanel" aria-labelledby="tabSpectrum" class="grid2 even" hidden>
+    <div class="card">
+      <h2>Blackbody (Planck's law)</h2>
+      <div class="slider two">
+        <input type="range" id="temp" min="0" max="1000" value="515" aria-label="Blackbody temperature">
+        <output id="tempOut">5,772 K</output>
+      </div>
+      <div class="sub" id="wien"></div>
+      <div class="chips" id="bbChips"></div>
+    </div>
+    <div class="card">
+      <h2>Other sources (written into the spectrum exactly)</h2>
+      <div class="chips" id="srcChips"></div>
+      <h2 style="margin-top:4px">Tools</h2>
+      <div class="tools">
+        <button type="button" id="smooth">Smooth curve</button>
+        <button type="button" id="normalise">Re-normalise peak to 0 dB</button>
+        <button type="button" id="fromColour">Start from the picked colour</button>
+      </div>
+      <p class="sub" style="margin:0">Draw directly on the light spectrum below. Drawing while in colour mode switches to this mode and keeps the colour's spectrum as the starting point.</p>
+    </div>
+  </section>
+
+  <!-- ===================== Shared spectra ===================== -->
+  <div class="block">
+    <div class="cap">
+      <span id="capLeft">Light spectrum · 700 nm</span>
+      <span class="win" role="radiogroup" aria-label="Wavelength window mapped onto the audible range">
+        <label><input type="radio" name="win" value="visible" checked> Visible 380–700 nm</label>
+        <label><input type="radio" name="win" value="extended"> Extended 100–3000 nm</label>
+      </span>
+      <span id="capRight">380 nm</span>
+    </div>
+    <canvas class="editor" id="editor" tabindex="0" aria-label="Spectral power distribution. Draw with the pointer to shape the spectrum."></canvas>
+    <div class="cap"><span>Sound spectrum · 20 Hz</span><span>20 kHz</span></div>
+    <canvas class="audio" id="audio" aria-label="Target and live audio spectrum"></canvas>
+    <div class="legend">
+      <span><i></i>target from the light spectrum</span>
+      <span><i class="solid"></i>live output (level-aligned)</span>
+      <span>Level in dB relative to peak, floor −90 dB · visible band in true hues, UV and IR in false colour</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="grid2 even">
+      <div>
+        <h2>What a human would see</h2>
+        <div class="ident">
+          <div class="swatch" id="seenSwatch"></div>
+          <div>
+            <div class="name" id="seenName">White</div>
+            <div class="sub"><span class="mono" id="seenHex">#ffffff</span> · <span id="xy"></span></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:grid; gap:8px">
+        <div class="shares">
+          <div class="share"><b id="shareUv">0%</b><span>ultraviolet</span></div>
+          <div class="share"><b id="shareVis">100%</b><span>visible</span></div>
+          <div class="share"><b id="shareIr">0%</b><span>infrared</span></div>
+        </div>
+        <div class="sub" id="note"></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="hint">One model throughout: a spectral power distribution over wavelength is laid onto 20 Hz–20 kHz (both logarithmic, long wavelength
+    to low frequency) and becomes the noise's power envelope. The colour picker writes a three-band metamer of the picked colour into the
+    visible band; the spectrum mode writes physical sources or your drawing. Colour seen is always computed back from the spectrum with the
+    CIE 1931 colour matching functions. <kbd>Space</kbd> plays / stops when a control has focus.</p>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  // =====================================================================================
+  //  Spectrum store: power in dB relative to peak, sampled uniformly in log wavelength
+  //  over 100–3000 nm. Everything (colour, sound, display) derives from this array.
+  // =====================================================================================
+  const L_MIN = 100, L_MAX = 3000, NPTS = 2048, DB_FLOOR = -90;
+  const VIS_LO = 380, VIS_HI = 700;
+  const FMIN = 20, FMAX = 20000, F_TOP = 22000;
+  const spec = new Float32Array(NPTS).fill(0);
+  const lamOfIdx = i => L_MAX * Math.pow(L_MIN / L_MAX, i / (NPTS - 1));   // index 0 = 3000 nm
+  const idxOfLam = l => Math.log(L_MAX / l) / Math.log(L_MAX / L_MIN) * (NPTS - 1);
+  function specAt(i) {
+    if (i <= 0) return spec[0];
+    if (i >= NPTS - 1) return spec[NPTS - 1];
+    const k = Math.floor(i), t = i - k;
+    return spec[k] + (spec[k + 1] - spec[k]) * t;
+  }
+  const specAtLam = l => specAt(idxOfLam(l));
+  function normalise() {
+    let peak = -Infinity;
+    for (let i = 0; i < NPTS; i++) peak = Math.max(peak, spec[i]);
+    if (!isFinite(peak)) return;
+    for (let i = 0; i < NPTS; i++) spec[i] = Math.max(DB_FLOOR, spec[i] - peak);
+  }
+  const powerDb = p => 10 * Math.log10(Math.max(p, 1e-9));
+
+  // Wavelength window laid onto the audible range (log ↔ log, long λ ↔ low f)
+  const WINDOWS = { visible: { lo: VIS_LO, hi: VIS_HI }, extended: { lo: L_MIN, hi: L_MAX } };
+  let win = WINDOWS.visible;
+  const lamOfFreqIn = (w, f) => w.hi * Math.pow(w.lo / w.hi, Math.log(f / FMIN) / Math.log(FMAX / FMIN));
+  const freqOfLamIn = (w, l) => FMIN * Math.pow(FMAX / FMIN, Math.log(w.hi / l) / Math.log(w.hi / w.lo));
+  const lamOfFreq = f => lamOfFreqIn(win, f);
+  const freqOfLam = l => freqOfLamIn(win, l);
+  const inWin = l => l >= win.lo - 1e-9 && l <= win.hi + 1e-9;
+
+  // =====================================================================================
+  //  Colour → spectrum (three cone bands partitioning the visible range, soft edges)
+  // =====================================================================================
+  const EDGE_SM = 490, EDGE_ML = 580, EDGE_W = 6;
+  const sig = x => 1 / (1 + Math.exp(-x));
+  function coneBands(l) { const a = sig((l - EDGE_SM) / EDGE_W), b = sig((l - EDGE_ML) / EDGE_W); return { S: 1 - a, M: a - b, L: b }; }
+  const spd3 = (l, lin) => { const w = coneBands(l); return lin[0] * w.L + lin[1] * w.M + lin[2] * w.S; };
+  const srgbToLin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  function writeColourSpectrum(lin) {
+    const peak = Math.max(...lin);
+    for (let i = 0; i < NPTS; i++) {
+      const l = lamOfIdx(i);
+      spec[i] = (l >= VIS_LO && l <= VIS_HI && peak > 0) ? Math.max(DB_FLOOR, powerDb(spd3(l, lin) / peak)) : DB_FLOOR;
+    }
+  }
+
+  // =====================================================================================
+  //  Spectrum → colour (CIE 1931 2°, analytic multi-lobe CMFs: Wyman, Sloan & Shirley 2013)
+  // =====================================================================================
+  const lobe = (l, mu, s1, s2) => { const t = (l - mu) / (l < mu ? s1 : s2); return Math.exp(-0.5 * t * t); };
+  const xBar = l => 1.056 * lobe(l, 599.8, 37.9, 31.0) + 0.362 * lobe(l, 442.0, 16.0, 26.7) - 0.065 * lobe(l, 501.1, 20.4, 26.2);
+  const yBar = l => 0.821 * lobe(l, 568.8, 46.9, 40.5) + 0.286 * lobe(l, 530.9, 16.3, 31.1);
+  const zBar = l => 1.217 * lobe(l, 437.0, 11.8, 36.0) + 0.681 * lobe(l, 459.0, 26.0, 13.4);
+  const gammaEnc = c => c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  const toHex = rgb => '#' + rgb.map(c => Math.round(c * 255).toString(16).padStart(2, '0')).join('');
+  function analyse() {
+    let X = 0, Y = 0, Z = 0;
+    for (let l = 380; l <= 780; l++) {
+      const p = Math.pow(10, specAtLam(l) / 10);
+      X += p * xBar(l); Y += p * yBar(l); Z += p * zBar(l);
+    }
+    let uv = 0, vis = 0, ir = 0;
+    for (let i = 0; i < NPTS; i++) {
+      const l = lamOfIdx(i), w = Math.pow(10, spec[i] / 10) * l; // uniform in log λ ⇒ dλ ∝ λ
+      if (l < VIS_LO) uv += w; else if (l > VIS_HI) ir += w; else vis += w;
+    }
+    const tot = uv + vis + ir || 1;
+    const shares = { uv: uv / tot, vis: vis / tot, ir: ir / tot };
+    const sum = X + Y + Z;
+    if (sum <= 1e-6) return { rgb: [0, 0, 0], hex: '#000000', xy: null, shares, clipped: false, invisible: true };
+    const xy = [X / sum, Y / sum];
+    let r = 3.2406 * X - 1.5372 * Y - 0.4986 * Z;
+    let g = -0.9689 * X + 1.8758 * Y + 0.0415 * Z;
+    let b = 0.0557 * X - 0.2040 * Y + 1.0570 * Z;
+    const mx = Math.max(r, g, b);
+    const clipped = Math.min(r, g, b) < -0.01 * mx;
+    r = Math.max(0, r) / mx; g = Math.max(0, g) / mx; b = Math.max(0, b) / mx;
+    const rgb = [r, g, b].map(gammaEnc);
+    return { rgb, hex: toHex(rgb), xy, shares, clipped, invisible: false };
+  }
+  function colourName(a) {
+    if (a.invisible) return 'Invisible';
+    const [r, g, b] = a.rgb;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    if (d < 0.15) return 'White';
+    let h = 0;
+    if (max === r) h = 60 * (((g - b) / d) % 6); else if (max === g) h = 60 * ((b - r) / d + 2); else h = 60 * ((r - g) / d + 4);
+    if (h < 0) h += 360;
+    const names = [[15, 'Red'], [45, 'Orange'], [70, 'Yellow'], [160, 'Green'], [200, 'Cyan'], [260, 'Blue'], [300, 'Violet'], [345, 'Magenta'], [360, 'Red']];
+    const base = names.find(([lim]) => h < lim)[1];
+    return d < 0.35 ? 'Pale ' + base.toLowerCase() : base;
+  }
+
+  // =====================================================================================
+  //  Physical sources (spectrum mode)
+  // =====================================================================================
+  const C2 = 1.438776877e-2, WIEN_B = 2.897771955e-3;
+  function planckDb(lamNm, T) {
+    const lam = lamNm * 1e-9, x = C2 / (lam * T);
+    return (10 / Math.LN10) * (-5 * Math.log(lam) - (x + Math.log1p(-Math.exp(-x))));
+  }
+  function setBlackbody(T) { for (let i = 0; i < NPTS; i++) spec[i] = planckDb(lamOfIdx(i), T); normalise(); }
+  function aWeight(f) {
+    const f2 = f * f;
+    return 12194 ** 2 * f2 * f2 / ((f2 + 20.6 ** 2) * Math.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2)) * (f2 + 12194 ** 2));
+  }
+  const A1K = aWeight(1000);
+  const CLASSICS = [
+    { name: 'White',  db: f => 0 },
+    { name: 'Pink',   db: f => -10 * Math.log10(f / 1000) },
+    { name: 'Brown',  db: f => -20 * Math.log10(f / 1000) },
+    { name: 'Blue',   db: f => 10 * Math.log10(f / 1000) },
+    { name: 'Violet', db: f => 20 * Math.log10(f / 1000) },
+    { name: 'Grey',   db: f => Math.min(24, 20 * Math.log10(A1K / aWeight(f))) },
+  ];
+  function setClassic(c) { // exact in audio terms, written over the current window
+    for (let i = 0; i < NPTS; i++) { const l = lamOfIdx(i); spec[i] = inWin(l) ? c.db(freqOfLam(l)) : DB_FLOOR; }
+    normalise();
+  }
+  // Emission lines (nm), standard air wavelengths. Relative intensities are NOT modelled: all lines equal.
+  const LINES = {
+    Hydrogen: [121.57, 656.28, 486.13, 434.05, 410.17, 1875.1, 1281.8, 1093.8],
+    Sodium:   [588.995, 589.592],
+    Mercury:  [253.65, 365.02, 404.66, 435.83, 546.07, 576.96, 579.07],
+  };
+  const LINE_SIGMA_OCT = 1 / 24; // audio width of a line (octaves), converted to index units per window at write time
+  function setLines(name) {
+    const lin = new Float64Array(NPTS).fill(Math.pow(10, DB_FLOOR / 10));
+    // index samples per audio octave for the current window, so line width is fixed in audio terms
+    const idxPerOct = (NPTS - 1) * Math.log2(win.hi / win.lo) / Math.log2(L_MAX / L_MIN) / Math.log2(FMAX / FMIN);
+    const sigma = Math.max(1.0, LINE_SIGMA_OCT * idxPerOct);
+    for (const l of LINES[name]) {
+      const c = idxOfLam(l);
+      for (let i = 0; i < NPTS; i++) { const d = (i - c) / sigma; lin[i] += Math.exp(-0.5 * d * d); }
+    }
+    for (let i = 0; i < NPTS; i++) spec[i] = 10 * Math.log10(lin[i]);
+    normalise();
+  }
+
+  // =====================================================================================
+  //  Classic-noise fits for the colour picker (visible window only)
+  // =====================================================================================
+  function hsvToRgb(h, s, v) {
+    h = ((h % 360) + 360) % 360;
+    const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+    let r, g, b;
+    if (h < 60) [r, g, b] = [c, x, 0]; else if (h < 120) [r, g, b] = [x, c, 0];
+    else if (h < 180) [r, g, b] = [0, c, x]; else if (h < 240) [r, g, b] = [0, x, c];
+    else if (h < 300) [r, g, b] = [x, 0, c]; else [r, g, b] = [c, 0, x];
+    return [r + m, g + m, b + m].map(u => Math.round(u * 255));
+  }
+  function rgbToHsv(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let h = 0;
+    if (d > 0) {
+      if (max === r) h = 60 * (((g - b) / d) % 6); else if (max === g) h = 60 * ((b - r) / d + 2); else h = 60 * ((r - g) / d + 4);
+      if (h < 0) h += 360;
+    }
+    return { h, sat: max === 0 ? 0 : d / max, val: max };
+  }
+  const hex8 = rgb255 => '#' + rgb255.map(c => c.toString(16).padStart(2, '0')).join('');
+  const FIT_F = Array.from({ length: 61 }, (_, i) => FMIN * Math.pow(FMAX / FMIN, i / 60));
+  const FIT_LAM = FIT_F.map(f => lamOfFreqIn(WINDOWS.visible, f));
+  function fitError(lin, target) {
+    const peak = Math.max(...lin); if (peak <= 0) return Infinity;
+    const diffs = FIT_LAM.map((l, i) => powerDb(spd3(l, lin) / peak) - target(FIT_F[i]));
+    const mean = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+    return Math.sqrt(diffs.reduce((a, d) => a + (d - mean) ** 2, 0) / diffs.length);
+  }
+  const REFS = CLASSICS.map(c => {
+    let best = { err: Infinity };
+    for (let h = 0; h < 360; h += 2) for (let s = 0; s <= 1.0001; s += 0.02) {
+      const rgb = hsvToRgb(h, s, 1), err = fitError(rgb.map(srgbToLin), c.db);
+      if (err < best.err) best = { err, h, sat: s, rgb };
+    }
+    return { ...c, ...best, hex: hex8(best.rgb) };
+  });
+
+  // =====================================================================================
+  //  Synthesis: fixed random phases, envelope from the spectrum, seamless loop, crossfade
+  // =====================================================================================
+  function envelope(f) {
+    const fc = Math.min(FMAX, Math.max(FMIN, f));
+    let m = Math.pow(10, specAtLam(lamOfFreq(fc)) / 20);
+    if (f < FMIN) m *= (f / FMIN) * (f / FMIN);
+    if (f > FMAX) m *= f >= F_TOP ? 0 : 0.5 * (1 + Math.cos(Math.PI * (f - FMAX) / (F_TOP - FMAX)));
+    return m;
+  }
+  const loopLength = sr => Math.min(1 << 20, 1 << Math.ceil(Math.log2(sr * 5)));
+  let phases = null;
+  function fft(re, im, inverse) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >> 1, ang = (inverse ? 2 : -2) * Math.PI / len;
+      const wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let j = 0; j < half; j++) {
+          const a = i + j, b = a + half;
+          const xr = re[b], xi = im[b];
+          const vr = xr * cr - xi * ci, vi = xr * ci + xi * cr;
+          re[b] = re[a] - vr; im[b] = im[a] - vi;
+          re[a] += vr;        im[a] += vi;
+          const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+        }
+      }
+    }
+    if (inverse) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  }
+  function renderNoise(ctx, level) {
+    const sr = ctx.sampleRate, N = loopLength(sr);
+    if (!phases || phases.length !== N / 2) {
+      phases = new Float32Array(N / 2);
+      for (let k = 0; k < phases.length; k++) phases[k] = Math.random() * 2 * Math.PI;
+    }
+    const re = new Float64Array(N), im = new Float64Array(N);
+    for (let k = 1; k < N / 2; k++) {
+      const m = envelope(k * sr / N);
+      const c = m * Math.cos(phases[k]), s = m * Math.sin(phases[k]);
+      re[k] = c; im[k] = s; re[N - k] = c; im[N - k] = -s;
+    }
+    fft(re, im, true);
+    let sum = 0, peak = 0;
+    for (let i = 0; i < N; i++) { const v = re[i]; sum += v * v; const a = Math.abs(v); if (a > peak) peak = a; }
+    const buf = ctx.createBuffer(1, N, sr), d = buf.getChannelData(0);
+    if (sum < 1e-12) return buf;
+    let gain = 0.16 / Math.sqrt(sum / N);
+    if (peak * gain > 0.95) gain = 0.95 / peak;
+    gain *= level;
+    for (let i = 0; i < N; i++) d[i] = re[i] * gain;
+    return buf;
+  }
+
+  let ac = null, master = null, analyser = null, current = null, playing = false, regenTimer = 0;
+  const XFADE = 0.25;
+  function ensureAudio() {
+    if (ac) return;
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain(); master.gain.value = volToGain(vol.value);
+    analyser = ac.createAnalyser(); analyser.fftSize = 32768; analyser.smoothingTimeConstant = 0.8;
+    master.connect(analyser); analyser.connect(ac.destination);
+  }
+  function swapTo(buf) {
+    const t = ac.currentTime, g = ac.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + XFADE);
+    const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+    src.connect(g); g.connect(master); src.start(t, Math.random() * buf.duration);
+    if (current) fadeOut(current, t);
+    current = { src, gain: g };
+  }
+  function fadeOut(node, t) {
+    const gp = node.gain.gain;
+    gp.cancelScheduledValues(t); gp.setValueAtTime(gp.value, t); gp.linearRampToValueAtTime(0, t + XFADE);
+    node.src.stop(t + XFADE + 0.05);
+  }
+  const currentLevel = () => (mode === 'colour' ? val : 1);
+  function scheduleRegen() {
+    if (!playing) return;
+    clearTimeout(regenTimer);
+    regenTimer = setTimeout(() => swapTo(renderNoise(ac, currentLevel())), 120);
+  }
+  async function togglePlay() {
+    ensureAudio();
+    if (ac.state === 'suspended') await ac.resume();
+    playing = !playing;
+    playBtn.setAttribute('aria-pressed', String(playing));
+    playBtn.setAttribute('aria-label', playing ? 'Stop' : 'Play');
+    if (playing) { swapTo(renderNoise(ac, currentLevel())); requestAnimationFrame(drawAudio); }
+    else { clearTimeout(regenTimer); if (current) { fadeOut(current, ac.currentTime); current = null; } }
+  }
+
+  // =====================================================================================
+  //  UI state
+  // =====================================================================================
+  const $ = id => document.getElementById(id);
+  let mode = 'colour';
+  let hue = 0, sat = 0, val = 1;
+  let activeSource = null; // label of the active spectrum-mode source, or null for custom
+
+  const disc = $('disc'), handle = $('handle'), rim = $('rim'), dots = $('dots');
+  const valIn = $('val'), valOut = $('valOut');
+  const pickSwatch = $('pickSwatch'), pickName = $('pickName'), bandsEl = $('bands'), hexIn = $('hex'), nativeIn = $('native'), hsvEl = $('hsv'), closestEl = $('closest');
+  const fitChips = $('fitChips'), fitBlock = $('fitBlock'), fitNote = $('fitNote');
+  const tempIn = $('temp'), tempOut = $('tempOut'), wienEl = $('wien');
+  const editor = $('editor'), ed = editor.getContext('2d'), audioCv = $('audio'), au = audioCv.getContext('2d');
+  const seenSwatch = $('seenSwatch'), seenName = $('seenName'), seenHex = $('seenHex'), xyEl = $('xy'), noteEl = $('note');
+  const playBtn = $('play'), vol = $('vol'), volOut = $('volOut');
+  const capLeft = $('capLeft'), capRight = $('capRight');
+
+  // ---- colour disc ----
+  for (const [deg, text] of [[0, 'Red'], [60, 'Yellow'], [120, 'Green'], [180, 'Cyan'], [240, 'Blue'], [300, 'Magenta']]) {
+    const w = document.createElement('div'); w.className = 'rim-label';
+    const a = deg * Math.PI / 180;
+    w.style.setProperty('--ux', Math.sin(a).toFixed(4)); w.style.setProperty('--uy', (-Math.cos(a)).toFixed(4));
+    w.textContent = text; rim.appendChild(w);
+  }
+  const discX = (h, s) => s * Math.sin(h * Math.PI / 180), discY = (h, s) => -s * Math.cos(h * Math.PI / 180);
+  const dotEls = [], fitChipEls = [];
+  for (const r of REFS) {
+    const d = document.createElement('div'); d.className = 'ref-dot';
+    d.style.left = `${50 + discX(r.h, r.sat) * 50}%`; d.style.top = `${50 + discY(r.h, r.sat) * 50}%`;
+    d.title = `${r.name} noise ≈ ${r.hex} (±${r.err.toFixed(1)} dB)`;
+    dots.appendChild(d); dotEls.push(d);
+    const b = document.createElement('button'); b.type = 'button';
+    b.style.setProperty('--c', r.hex);
+    b.innerHTML = `<i aria-hidden="true"></i>${r.name} <small>±${r.err.toFixed(1)} dB</small>`;
+    b.title = `The colour whose three-band spectrum best matches ${r.name.toLowerCase()} noise: ${r.hex}`;
+    b.addEventListener('click', () => { setColour(r.h, r.sat, 1, false); disc.focus({ preventScroll: true }); });
+    fitChips.appendChild(b); fitChipEls.push(b);
+  }
+  const SNAP = 0.04;
+  function setColour(h, s, v, snap) {
+    h = ((h % 360) + 360) % 360; s = Math.min(1, Math.max(0, s)); v = Math.min(1, Math.max(0, v));
+    if (snap) {
+      const x = discX(h, s), y = discY(h, s);
+      for (const r of REFS) if (Math.hypot(discX(r.h, r.sat) - x, discY(r.h, r.sat) - y) < SNAP) { h = r.h; s = r.sat; break; }
+    }
+    hue = h; sat = s; val = v;
+    const rgb = hsvToRgb(h, s, v), lin1 = hsvToRgb(h, s, 1).map(srgbToLin);
+    writeColourSpectrum(lin1);
+
+    handle.style.left = `${50 + discX(h, s) * 50}%`; handle.style.top = `${50 + discY(h, s) * 50}%`;
+    const hex = hex8(rgb);
+    document.documentElement.style.setProperty('--hs', hex8(hsvToRgb(h, s, 1)));
+    pickSwatch.style.setProperty('--sw', hex);
+    if (document.activeElement !== hexIn) hexIn.value = hex;
+    nativeIn.value = hex;
+    if (document.activeElement !== valIn) valIn.value = Math.round(v * 100);
+    valOut.value = `${Math.round(v * 100)}%`;
+    hsvEl.textContent = `hue ${Math.round(h)}° · saturation ${Math.round(s * 100)}% · value ${Math.round(v * 100)}%`;
+
+    // three-band readout at band centres, relative to the peak band
+    const peak = Math.max(...lin1);
+    const at = l => peak > 0 ? powerDb(spd3(l, lin1) / peak) : -Infinity;
+    const b = { bass: at((VIS_HI + EDGE_ML) / 2), mids: at((EDGE_ML + EDGE_SM) / 2), treble: at((EDGE_SM + VIS_LO) / 2) };
+    const fmt = x => { if (!isFinite(x) || x <= -60) return '≤ −60 dB'; if (Math.abs(x) < 0.05) x = 0; return `${x > 0 ? '+' : ''}${x.toFixed(1)} dB`; };
+    bandsEl.textContent = v < 0.005 ? 'black: no light, no sound' : `three-band spectrum · bass ${fmt(b.bass)} · mids ${fmt(b.mids)} · treble ${fmt(b.treble)}`;
+    let name = 'Flat';
+    if (v < 0.005) name = 'Silence';
+    else {
+      const rel = Object.entries(b);
+      const on = rel.filter(([, d]) => d > -1.5).map(([k]) => k), off = rel.filter(([, d]) => d <= -20).map(([k]) => k);
+      const soft = rel.filter(([, d]) => d <= -1.5 && d > -20).map(([k]) => k);
+      if (on.length !== 3) {
+        name = on.join(' + '); name = name[0].toUpperCase() + name.slice(1);
+        if (soft.length) name += `, soft ${soft.join(' and ')}`;
+        if (off.length) name += `, no ${off.join(' or ')}`;
+      }
+    }
+    pickName.textContent = name;
+    let ref = null, closest = null;
+    for (const r of REFS) if (Math.abs(r.h - h) < 1 && Math.abs(r.sat - s) < 0.005 && v > 0.999) ref = r;
+    if (v >= 0.005) for (const c of CLASSICS) { const err = fitError(lin1, c.db); if (!closest || err < closest.err) closest = { name: c.name, err }; }
+    closestEl.innerHTML = ref ? `Best available match for <b>${ref.name.toLowerCase()} noise</b>, within ±${ref.err.toFixed(1)} dB of the ideal curve (visible window).`
+      : closest ? `Closest classic: <b>${closest.name.toLowerCase()} noise</b>, ±${closest.err.toFixed(1)} dB away (visible window).` : '';
+    disc.setAttribute('aria-valuenow', String(Math.round(h)));
+    disc.setAttribute('aria-valuetext', `${hex}, ${name}`);
+    REFS.forEach((r, i) => { dotEls[i].dataset.active = String(ref === r); fitChipEls[i].setAttribute('aria-current', String(ref === r)); });
+    commit();
+  }
+  let dragging = false;
+  function fromPointer(e) {
+    const r = disc.getBoundingClientRect();
+    const x = (e.clientX - (r.left + r.width / 2)) / (r.width / 2), y = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+    setColour(Math.atan2(x, -y) * 180 / Math.PI, Math.hypot(x, y), val, true);
+  }
+  disc.addEventListener('pointerdown', e => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    dragging = true; disc.classList.add('dragging'); disc.setPointerCapture(e.pointerId); disc.focus({ preventScroll: true });
+    fromPointer(e); e.preventDefault();
+  });
+  disc.addEventListener('pointermove', e => { if (dragging) fromPointer(e); });
+  const endDrag = () => { dragging = false; disc.classList.remove('dragging'); };
+  disc.addEventListener('pointerup', endDrag); disc.addEventListener('pointercancel', endDrag); disc.addEventListener('lostpointercapture', endDrag);
+  disc.addEventListener('keydown', e => {
+    const dh = e.shiftKey ? 15 : 3, ds = e.shiftKey ? 0.2 : 0.05;
+    switch (e.key) {
+      case 'ArrowRight': setColour(hue + dh, sat, val, false); break;
+      case 'ArrowLeft':  setColour(hue - dh, sat, val, false); break;
+      case 'ArrowUp':    setColour(hue, sat + ds, val, false); break;
+      case 'ArrowDown':  setColour(hue, sat - ds, val, false); break;
+      case 'PageUp':     setColour(hue, sat, val + ds, false); break;
+      case 'PageDown':   setColour(hue, sat, val - ds, false); break;
+      case 'Home':       setColour(0, 0, 1, false); break;
+      case ' ': case 'Enter': togglePlay(); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+  valIn.addEventListener('input', () => setColour(hue, sat, valIn.value / 100, false));
+  function applyHex(v) {
+    const m = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(v.trim());
+    if (!m) return false;
+    let hx = m[1]; if (hx.length === 3) hx = hx.split('').map(c => c + c).join('');
+    const n = parseInt(hx, 16), { h, sat: s, val: vv } = rgbToHsv(n >> 16, (n >> 8) & 255, n & 255);
+    setColour(h, s, vv, false); return true;
+  }
+  hexIn.addEventListener('input', () => applyHex(hexIn.value));
+  hexIn.addEventListener('change', () => { if (!applyHex(hexIn.value)) hexIn.value = hex8(hsvToRgb(hue, sat, val)); });
+  hexIn.addEventListener('blur', () => { hexIn.value = hex8(hsvToRgb(hue, sat, val)); });
+  nativeIn.addEventListener('input', () => applyHex(nativeIn.value));
+
+  // ---- spectrum mode controls ----
+  const T_MIN = 1000, T_MAX = 30000;
+  const tempOfSlider = v => T_MIN * Math.pow(T_MAX / T_MIN, v / 1000);
+  const sliderOfTemp = T => Math.round(1000 * Math.log(T / T_MIN) / Math.log(T_MAX / T_MIN));
+  const BODIES = [['Candle', 1850], ['Bulb', 2700], ['Sun', 5772], ['Sirius', 9940], ['Rigel', 12100], ['O star', 30000]];
+  const srcChipEls = [];
+  function chip(parent, label, onClick, title) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (title) b.title = title;
+    b.addEventListener('click', onClick); parent.appendChild(b); srcChipEls.push([label, b]); return b;
+  }
+  for (const [label, T] of BODIES) chip($('bbChips'), `${label} ${T.toLocaleString()} K`, () => setTemp(T));
+  for (const c of CLASSICS) chip($('srcChips'), c.name, () => { setClassic(c); setSource(c.name); }, `${c.name} noise, exact over the current window`);
+  for (const n of Object.keys(LINES)) chip($('srcChips'), `${n} lines`, () => { setLines(n); setSource(`${n} lines`); }, 'Emission lines; positions exact, intensities equal');
+  $('smooth').addEventListener('click', () => {
+    const c = Float32Array.from(spec);
+    for (let i = 0; i < NPTS; i++) { let s = 0, n = 0; for (let k = -4; k <= 4; k++) { const j = i + k; if (j >= 0 && j < NPTS) { s += c[j]; n++; } } spec[i] = s / n; }
+    normalise(); setSource(null);
+  });
+  $('normalise').addEventListener('click', () => { normalise(); setSource(activeSource); });
+  $('fromColour').addEventListener('click', () => { writeColourSpectrum(hsvToRgb(hue, sat, 1).map(srgbToLin)); setSource(`Colour ${hex8(hsvToRgb(hue, sat, 1))}`); });
+  function setTemp(T) { tempIn.value = sliderOfTemp(T); applyTemp(T); }
+  function applyTemp(T) {
+    setBlackbody(T);
+    tempOut.value = `${Math.round(T).toLocaleString()} K`;
+    const peak = WIEN_B / T * 1e9;
+    wienEl.textContent = `Wien peak at ${peak >= 1000 ? (peak / 1000).toFixed(2) + ' µm' : Math.round(peak) + ' nm'}` +
+      (peak > VIS_HI ? ' (infrared)' : peak < VIS_LO ? ' (ultraviolet)' : ' (visible)');
+    const body = BODIES.find(([, bt]) => Math.abs(bt - T) < 0.5);
+    setSource(body ? `${body[0]} ${body[1].toLocaleString()} K` : `Blackbody ${Math.round(T)} K`);
+  }
+  tempIn.addEventListener('input', () => applyTemp(tempOfSlider(+tempIn.value)));
+  function setSource(label) {
+    activeSource = label;
+    for (const [l, b] of srcChipEls) b.setAttribute('aria-current', String(l === label));
+    commit();
+  }
+
+  // ---- mode + window ----
+  function setMode(m) {
+    mode = m;
+    $('tabColour').setAttribute('aria-selected', String(m === 'colour'));
+    $('tabSpectrum').setAttribute('aria-selected', String(m === 'spectrum'));
+    $('modeColour').hidden = m !== 'colour';
+    $('modeSpectrum').hidden = m !== 'spectrum';
+  }
+  $('tabColour').addEventListener('click', () => { setMode('colour'); setWindow('visible'); setColour(hue, sat, val, false); });
+  $('tabSpectrum').addEventListener('click', () => { setMode('spectrum'); setWindow('extended'); if (activeSource === null) commit(); else if (/^(Candle|Bulb|Sun|Sirius|Rigel|O star|Blackbody)/.test(activeSource)) applyTemp(tempOfSlider(+tempIn.value)); else commit(); });
+  function setWindow(name) {
+    win = WINDOWS[name];
+    document.querySelector(`input[name=win][value=${name}]`).checked = true;
+    capLeft.textContent = `Light spectrum · ${win.hi >= 1000 ? (win.hi / 1000) + ' µm' : win.hi + ' nm'}${win.hi > VIS_HI ? ' (near infrared)' : ''}`;
+    capRight.textContent = `${win.lo} nm${win.lo < VIS_LO ? ' (ultraviolet)' : ''}`;
+    const vis = name === 'visible';
+    fitBlock.hidden = !vis; fitNote.hidden = vis;
+  }
+  for (const r of document.querySelectorAll('input[name=win]')) r.addEventListener('change', () => { setWindow(r.value); commit(); });
+
+  // ---- commit: everything downstream of the spectrum ----
+  function commit() {
+    const a = analyse();
+    document.documentElement.style.setProperty('--accent', a.hex);
+    seenSwatch.style.setProperty('--sw', a.hex);
+    seenName.textContent = colourName(a);
+    seenHex.textContent = a.hex;
+    xyEl.textContent = a.xy ? `xy ${a.xy[0].toFixed(3)}, ${a.xy[1].toFixed(3)}` : 'no visible light';
+    const pct = v => v < 0.0005 && v > 0 ? '<0.1%' : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
+    $('shareUv').textContent = pct(a.shares.uv); $('shareVis').textContent = pct(a.shares.vis); $('shareIr').textContent = pct(a.shares.ir);
+    const picked = mode === 'colour' ? hex8(hsvToRgb(hue, sat, 1)) : null;
+    noteEl.textContent = a.invisible ? 'No power in the visible band: this light cannot be seen at all.'
+      : a.clipped ? 'Outside the sRGB gamut; shown clipped to the nearest displayable colour.'
+      : picked && picked !== a.hex && sat < 0.1 ? `Equal-energy white (Illuminant E) is slightly warmer than the D65 white that sRGB calls neutral, so the picked ${picked} is seen as ${a.hex}.`
+      : picked && picked !== a.hex ? `Chromaticity of the three-band metamer. It differs from the picked ${picked} because broad bands cannot reproduce saturated display primaries; the spectrum, not the swatch, is what plays.`
+      : 'Chromaticity only: what this light looks like when bright enough to see.';
+    drawEditor();
+    if (!playing) drawAudio();
+    scheduleRegen();
+  }
+
+  // =====================================================================================
+  //  Canvases (x axis = current window in log wavelength = log frequency)
+  // =====================================================================================
+  const ED_TOP = 6, ED_BOT = DB_FLOOR - 6, A_TOP = 3, A_BOT = -63;
+  function sizeCanvas(cv, ctx) {
+    const dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  const lamOfX = (x, w) => win.hi * Math.pow(win.lo / win.hi, x / w);
+  const xOfLam = (l, w) => Math.log(win.hi / l) / Math.log(win.hi / win.lo) * w;
+  const xOfFreq = (f, w) => Math.log(f / FMIN) / Math.log(FMAX / FMIN) * w;
+  const yOfDb = (db, h, top, bot) => (top - Math.max(bot, Math.min(top, db))) / (top - bot) * h;
+  const dbOfY = (y, h, top, bot) => top - y / h * (top - bot);
+  function wavelengthRgb(l) {
+    let r = 0, g = 0, b = 0;
+    if (l < 440) { r = -(l - 440) / 60; b = 1; } else if (l < 490) { g = (l - 440) / 50; b = 1; }
+    else if (l < 510) { g = 1; b = -(l - 510) / 20; } else if (l < 580) { r = (l - 510) / 70; g = 1; }
+    else if (l < 645) { r = 1; g = -(l - 645) / 65; } else { r = 1; }
+    const fade = l < 420 ? 0.3 + 0.7 * (l - 380) / 40 : l > 700 ? 0.3 + 0.7 * (780 - l) / 80 : 1;
+    return [r, g, b].map(c => Math.pow(Math.max(0, c) * fade, 0.8));
+  }
+  const bandColour = l => (l >= VIS_LO && l <= VIS_HI) ? wavelengthRgb(l) : l > VIS_HI ? [0.75, 0.2, 0.15] : [0.55, 0.3, 0.95];
+  function drawEditor() {
+    const w = editor.clientWidth, h = editor.clientHeight;
+    ed.clearRect(0, 0, w, h);
+    for (let x = 0; x < w; x++) {
+      const l = lamOfX(x + 0.5, w), db = specAtLam(l), [r, g, b] = bandColour(l);
+      const k = 0.25 + 0.75 * Math.max(0, Math.min(1, 1 + db / 90));
+      ed.fillStyle = `rgb(${Math.round(r * 255 * k)} ${Math.round(g * 255 * k)} ${Math.round(b * 255 * k)})`;
+      ed.fillRect(x, yOfDb(db, h, ED_TOP, ED_BOT), 1, h);
+    }
+    ed.font = '11px system-ui, sans-serif'; ed.lineWidth = 1;
+    const ticks = win === WINDOWS.visible ? [[700, '700'], [650, '650'], [600, '600'], [550, '550'], [500, '500'], [450, '450'], [400, '400'], [380, '380']]
+      : [[2000, '2 µm'], [1000, '1 µm'], [VIS_HI, '700'], [500, '500'], [VIS_LO, '380'], [200, '200']];
+    for (const [l, label] of ticks) {
+      const x = Math.round(xOfLam(l, w)) + 0.5;
+      ed.strokeStyle = (l === VIS_LO || l === VIS_HI) ? 'rgb(255 255 255 / 0.5)' : 'rgb(255 255 255 / 0.12)';
+      ed.beginPath(); ed.moveTo(x, 0); ed.lineTo(x, h); ed.stroke();
+      ed.fillStyle = 'rgb(255 255 255 / 0.6)'; ed.fillText(label, Math.min(x + 4, w - 30), h - 6);
+    }
+    for (const db of [0, -30, -60]) {
+      const y = Math.round(yOfDb(db, h, ED_TOP, ED_BOT)) + 0.5;
+      ed.strokeStyle = 'rgb(255 255 255 / 0.12)'; ed.beginPath(); ed.moveTo(0, y); ed.lineTo(w, y); ed.stroke();
+      ed.fillStyle = 'rgb(255 255 255 / 0.6)'; ed.fillText(`${db} dB`, 4, db === 0 ? y + 12 : y - 3);
+    }
+    if (win === WINDOWS.extended) {
+      ed.fillStyle = 'rgb(255 255 255 / 0.55)';
+      ed.fillText('INFRARED (false colour)', xOfLam(1500, w) - 60, 14);
+      ed.fillText('VISIBLE', xOfLam(520, w) - 20, 14);
+      ed.fillText('UV (false colour)', xOfLam(180, w) - 40, 14);
+    }
+    ed.strokeStyle = '#fff'; ed.lineWidth = 1.6; ed.beginPath();
+    for (let x = 0; x <= w; x++) { const y = yOfDb(specAtLam(lamOfX(x, w)), h, ED_TOP, ED_BOT); if (x === 0) ed.moveTo(x, y); else ed.lineTo(x, y); }
+    ed.stroke();
+  }
+  let drawing = false, last = null;
+  function paint(e) {
+    const r = editor.getBoundingClientRect();
+    const i = Math.max(0, Math.min(NPTS - 1, idxOfLam(lamOfX(Math.max(0, Math.min(r.width, e.clientX - r.left)), r.width))));
+    const db = Math.max(DB_FLOOR, Math.min(0, dbOfY(e.clientY - r.top, r.height, ED_TOP, ED_BOT)));
+    if (last) {
+      const [i0, d0] = last, a = Math.min(i0, i), b = Math.max(i0, i);
+      for (let k = Math.round(a); k <= Math.round(b); k++) {
+        const t = b === a ? 0 : (k - i0) / (i - i0);
+        spec[k] = d0 + (db - d0) * Math.max(0, Math.min(1, t));
+      }
+    } else spec[Math.round(i)] = db;
+    last = [i, db];
+    setSource(null);
+  }
+  editor.addEventListener('pointerdown', e => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    if (mode === 'colour') { setMode('spectrum'); activeSource = `Colour ${hex8(hsvToRgb(hue, sat, 1))}`; }
+    drawing = true; last = null; editor.setPointerCapture(e.pointerId); editor.focus({ preventScroll: true }); paint(e); e.preventDefault();
+  });
+  editor.addEventListener('pointermove', e => { if (drawing) paint(e); });
+  const stopDraw = () => { drawing = false; last = null; };
+  editor.addEventListener('pointerup', stopDraw); editor.addEventListener('pointercancel', stopDraw); editor.addEventListener('lostpointercapture', stopDraw);
+  editor.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { togglePlay(); e.preventDefault(); } });
+
+  let specData = null;
+  function drawAudio() {
+    if (playing) requestAnimationFrame(drawAudio);
+    const w = audioCv.clientWidth, h = audioCv.clientHeight, c = au;
+    c.clearRect(0, 0, w, h);
+    c.strokeStyle = 'rgb(255 255 255 / 0.07)'; c.fillStyle = 'rgb(255 255 255 / 0.35)'; c.font = '11px system-ui, sans-serif'; c.lineWidth = 1;
+    for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
+      const x = Math.round(xOfFreq(f, w)) + 0.5;
+      c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+      if ([100, 1000, 10000].includes(f)) c.fillText(f >= 1000 ? `${f / 1000}k` : String(f), x + 4, h - 6);
+    }
+    for (const db of [0, -20, -40, -60]) {
+      const y = Math.round(yOfDb(db, h, A_TOP, A_BOT)) + 0.5;
+      c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+      c.fillText(`${db} dB`, 4, db === 0 ? y + 12 : y - 3);
+    }
+    const col = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    const target = new Float32Array(Math.ceil(w) + 1);
+    for (let x = 0; x < target.length; x++) target[x] = specAtLam(lamOfX(x, w));
+    if (playing && analyser) {
+      if (!specData || specData.length !== analyser.frequencyBinCount) specData = new Float32Array(analyser.frequencyBinCount);
+      analyser.getFloatFrequencyData(specData);
+      const binHz = ac.sampleRate / analyser.fftSize, offs = [];
+      for (let i = 1; i < specData.length; i++) {
+        const f = i * binHz; if (f < 100 || f > 10000) continue;
+        const t = target[Math.min(target.length - 1, Math.round(xOfFreq(f, w)))];
+        if (t > -55 && isFinite(specData[i])) offs.push(t - specData[i]);
+      }
+      offs.sort((a, b) => a - b);
+      const off = offs.length ? offs[offs.length >> 1] : 0;
+      c.beginPath(); c.moveTo(0, h);
+      for (let i = 1; i < specData.length; i++) {
+        const f = i * binHz; if (f < FMIN) continue; if (f > FMAX) break;
+        c.lineTo(xOfFreq(f, w), yOfDb(specData[i] + off, h, A_TOP, A_BOT));
+      }
+      c.lineTo(w, h); c.closePath();
+      c.fillStyle = `color-mix(in srgb, ${col} 30%, transparent)`; c.strokeStyle = col; c.lineWidth = 1.2; c.fill(); c.stroke();
+    }
+    c.setLineDash([5, 4]); c.strokeStyle = playing ? 'rgb(255 255 255 / 0.85)' : col; c.lineWidth = 1.6; c.beginPath();
+    for (let x = 0; x < target.length; x++) { const y = yOfDb(target[x], h, A_TOP, A_BOT); if (x === 0) c.moveTo(x, y); else c.lineTo(x, y); }
+    c.stroke(); c.setLineDash([]);
+  }
+
+  playBtn.addEventListener('click', togglePlay);
+  function volToGain(v) { return Math.pow(v / 100, 2); }
+  vol.addEventListener('input', () => { volOut.value = vol.value; if (master) master.gain.setTargetAtTime(volToGain(vol.value), ac.currentTime, 0.02); });
+  document.addEventListener('keydown', e => { if (e.key === ' ' && e.target === document.body) { togglePlay(); e.preventDefault(); } });
+
+  function layout() { sizeCanvas(editor, ed); sizeCanvas(audioCv, au); drawEditor(); if (!playing) drawAudio(); }
+  window.addEventListener('resize', layout);
+  sizeCanvas(editor, ed); sizeCanvas(audioCv, au);
+  setMode('colour'); setWindow('visible');
+  tempIn.value = sliderOfTemp(5772); tempOut.value = '5,772 K';
+  setColour(0, 0, 1, false);
+})();
+</script>
+</body>
+</html>

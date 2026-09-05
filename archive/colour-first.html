@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Static — colour to noise</title>
+<style>
+  :root {
+    --bg: #0e0f12;
+    --panel: #171a1f;
+    --ink: #e8e9ec;
+    --muted: #8d919a;
+    --accent: rgb(255 255 255);
+    --disc: min(78vw, 320px);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(60% 50% at 50% 25%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+      var(--bg);
+    transition: background 300ms linear;
+    display: grid;
+    place-items: center;
+    padding: 24px 16px;
+  }
+  main { width: 100%; min-width: 0; max-width: 760px; display: grid; gap: 22px; }
+  h1 {
+    margin: 0; text-align: center;
+    font-size: 1.15rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .top { display: grid; grid-template-columns: 1fr; gap: 24px; justify-items: center; align-items: start; }
+  .top > * { min-width: 0; max-width: 100%; }
+  @media (min-width: 660px) {
+    .top { grid-template-columns: auto 1fr; }
+    :root { --disc: 300px; }
+  }
+
+  /* ---------- Colour disc ---------- */
+  .picker { display: grid; gap: 14px; justify-items: center; }
+  .disc-wrap { padding: 30px 34px; }
+  .disc {
+    position: relative;
+    width: var(--disc); aspect-ratio: 1; border-radius: 50%;
+    background:
+      radial-gradient(closest-side, #fff 0%, rgb(255 255 255 / 0) 100%),
+      conic-gradient(from 0deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 20px 60px rgb(0 0 0 / 0.45);
+    touch-action: none; user-select: none; -webkit-user-select: none;
+    cursor: crosshair; outline: none;
+  }
+  .disc.dragging { cursor: grabbing; }
+  .disc:focus-visible .handle { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--ink); }
+  .handle {
+    position: absolute; --n: 26px;
+    width: var(--n); height: var(--n);
+    margin: calc(var(--n) / -2) 0 0 calc(var(--n) / -2);
+    border-radius: 50%;
+    background: var(--hs);
+    border: 3px solid #fff;
+    box-shadow: 0 0 0 1.5px rgb(0 0 0 / 0.6), 0 4px 14px rgb(0 0 0 / 0.5);
+    pointer-events: none;
+  }
+  .ref-dot {
+    position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+    border-radius: 50%;
+    border: 2px solid rgb(0 0 0 / 0.55);
+    background: rgb(255 255 255 / 0.9);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.6);
+    pointer-events: none; transition: transform 120ms;
+  }
+  .ref-dot[data-active="true"] { transform: scale(1.5); }
+  .rim-label {
+    position: absolute;
+    left: calc(50% + var(--ux) * 50%); top: calc(50% + var(--uy) * 50%);
+    translate: calc(-50% + var(--ux) * 50%) calc(-50% + var(--uy) * 50%);
+    margin: calc(var(--uy) * 8px) 0 0 calc(var(--ux) * 8px);
+    pointer-events: none;
+    font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted); white-space: nowrap;
+  }
+  .valrow {
+    width: var(--disc);
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+    color: var(--muted); font-size: 0.9rem;
+  }
+  .valrow input { accent-color: var(--accent); width: 100%; }
+  .valrow output { font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
+
+  /* ---------- Readout panel ---------- */
+  .panel { width: 100%; display: grid; gap: 14px; }
+  .ident { display: grid; grid-template-columns: 64px 1fr; gap: 14px; align-items: center; }
+  .swatch {
+    width: 64px; height: 64px; border-radius: 14px;
+    background: var(--accent);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2), 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  .name { font-size: 1.3rem; font-weight: 600; line-height: 1.15; }
+  .bands { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.9rem; margin-top: 3px; }
+  .closest { margin: 0; color: var(--muted); }
+  .closest b { color: var(--ink); font-weight: 600; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .field { display: flex; align-items: center; gap: 8px; background: var(--panel); border-radius: 10px; padding: 6px 10px; }
+  .field label { color: var(--muted); font-size: 0.85rem; }
+  input[type="text"] {
+    width: 9ch; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: transparent; border: 0; color: var(--ink); outline: none; text-transform: lowercase;
+  }
+  input[type="text"]:focus-visible { box-shadow: 0 1px 0 var(--ink); }
+  input[type="color"] { width: 34px; height: 26px; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 6px; }
+  .hsv { color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+
+  .refs h2 { margin: 0 0 6px; font-size: 0.8rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button {
+    font: inherit; font-size: 0.85rem; padding: 5px 11px; border-radius: 999px;
+    border: 1px solid rgb(255 255 255 / 0.12); background: var(--panel); color: var(--muted);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+    transition: color 120ms, border-color 120ms;
+  }
+  .chips button i { width: 11px; height: 11px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.3); }
+  .chips button small { color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+  .chips button:hover, .chips button:focus-visible { color: var(--ink); outline: none; }
+  .chips button[aria-current="true"] { color: var(--ink); border-color: var(--ink); }
+
+  .transport {
+    display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 12px;
+    padding: 10px 14px; background: var(--panel); border-radius: 12px;
+  }
+  .play {
+    width: 46px; height: 46px; border-radius: 50%; border: 0;
+    background: var(--accent); color: #000;
+    display: grid; place-items: center; cursor: pointer; transition: transform 120ms;
+  }
+  .play:hover { transform: scale(1.05); }
+  .play:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  .play svg { width: 20px; height: 20px; fill: currentColor; }
+  .play .stop { display: none; }
+  .play[aria-pressed="true"] .stop { display: block; }
+  .play[aria-pressed="true"] .go { display: none; }
+  .transport label { color: var(--muted); font-size: 0.9rem; }
+  .transport input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .transport output { font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; color: var(--muted); font-size: 0.9rem; }
+
+  /* ---------- Spectra ---------- */
+  .spectra { display: grid; gap: 4px; }
+  .spectra .cap { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); padding: 0 2px; }
+  canvas { display: block; width: 100%; border-radius: 10px; background: var(--panel); }
+  canvas.light { height: 30px; }
+  canvas.audio { height: 150px; }
+  .legend { display: flex; gap: 16px; font-size: 0.75rem; color: var(--muted); padding: 0 2px; }
+  .legend i { display: inline-block; width: 18px; border-top: 2px dashed var(--accent); vertical-align: middle; margin-right: 6px; }
+  .legend i.solid { border-top-style: solid; }
+  .hint { margin: 0; font-size: 0.8rem; color: var(--muted); text-align: center; max-width: 64ch; justify-self: center; }
+  kbd { font: inherit; font-size: 0.75rem; padding: 1px 5px; border-radius: 4px; background: rgb(255 255 255 / 0.08); }
+  @media (prefers-reduced-motion: reduce) { body, .play, .ref-dot { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Static</h1>
+
+  <div class="top">
+    <div class="picker">
+      <div class="disc-wrap">
+        <div class="disc" id="disc" role="slider" tabindex="0"
+             aria-label="Colour picker. Left and right arrows change hue, up and down change saturation, page up and down change brightness."
+             aria-valuemin="0" aria-valuemax="359" aria-valuenow="0" aria-valuetext="White">
+          <div id="rim"></div>
+          <div id="dots"></div>
+          <div class="handle" id="handle"></div>
+        </div>
+      </div>
+      <div class="valrow">
+        <label for="val">Brightness</label>
+        <input type="range" id="val" min="0" max="100" value="100">
+        <output for="val" id="valOut">100%</output>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ident">
+        <div class="swatch" id="swatch"></div>
+        <div>
+          <div class="name" id="name">Flat</div>
+          <div class="bands" id="bands"></div>
+        </div>
+      </div>
+      <p class="closest" id="closest"></p>
+
+      <div class="row">
+        <div class="field">
+          <label for="hex">Hex</label>
+          <input type="text" id="hex" value="#ffffff" spellcheck="false" autocomplete="off" maxlength="7">
+          <input type="color" id="native" value="#ffffff" aria-label="Open system colour picker">
+        </div>
+        <span class="hsv" id="hsv"></span>
+      </div>
+
+      <div class="refs">
+        <h2>Classic noises, at the colours that fit them best</h2>
+        <div class="chips" id="chips"></div>
+      </div>
+
+      <div class="transport">
+        <button class="play" id="play" type="button" aria-pressed="false" aria-label="Play">
+          <svg class="go" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="stop" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>
+        </button>
+        <label for="vol">Volume</label>
+        <input type="range" id="vol" min="0" max="100" value="45">
+        <output for="vol" id="volOut">45</output>
+      </div>
+    </div>
+  </div>
+
+  <div class="spectra">
+    <div class="cap"><span>Light spectrum of this colour · 700 nm</span><span>380 nm</span></div>
+    <canvas class="light" id="light" aria-label="Spectral power distribution of the chosen colour"></canvas>
+    <div class="cap"><span>Sound spectrum · 20 Hz</span><span>20 kHz</span></div>
+    <canvas class="audio" id="audio" aria-label="Target and live audio spectrum"></canvas>
+    <div class="legend"><span><i></i>target from colour</span><span><i class="solid"></i>live output (level-aligned)</span></div>
+  </div>
+
+  <p class="hint">Every colour is light with a spectrum. The three cone bands (long, medium, short wavelength)
+    become bass, mids and treble; the spectrum is transposed onto 20 Hz–20 kHz and used directly as the noise's
+    spectral envelope. <kbd>←</kbd><kbd>→</kbd> hue, <kbd>↑</kbd><kbd>↓</kbd> saturation,
+    <kbd>PgUp</kbd><kbd>PgDn</kbd> brightness, <kbd>Space</kbd> play / stop.</p>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  // =====================================================================================
+  //  MODEL: colour → light spectrum → sound spectrum
+  //
+  //  1. The colour's sRGB value is linearised to radiometric RGB (linear light).
+  //  2. A spectral power distribution (SPD) over 380–700 nm is reconstructed as
+  //        SPD(λ) = R·L(λ) + G·M(λ) + B·S(λ)
+  //     where L, M, S are three smooth bands that partition the visible range
+  //     (long / medium / short wavelength, with soft edges at 580 nm and 490 nm) and
+  //     sum to exactly 1 everywhere. Consequences that follow, not by decree:
+  //        white (1,1,1) → perfectly flat SPD → flat (white) noise;
+  //        red → long-wavelength band only → bass only;
+  //        magenta → red + blue bands → bass + treble, silent mids;
+  //        pastel colours → the missing band is only partly dipped.
+  //  3. Wavelength maps onto audio frequency: the visible band as drawn (linear in λ)
+  //     lands on the audible band as drawn (logarithmic in f), long λ ↔ low f:
+  //        700 nm → 20 Hz, 380 nm → 20 kHz.
+  //  4. The SPD is power, so the noise amplitude envelope is √SPD; the buffer is
+  //     RMS-normalised and then scaled by brightness (HSV value).
+  // =====================================================================================
+  const FMIN = 20, FMAX = 20000;
+  const LAM_MIN = 380, LAM_MAX = 700;
+  const EDGE_SM = 490, EDGE_ML = 580, EDGE_W = 6; // nm; edges are logistic, ~24 nm (≈0.75 octave) wide
+  const sig = x => 1 / (1 + Math.exp(-x));
+  function coneBands(lam) {
+    const a = sig((lam - EDGE_SM) / EDGE_W), b = sig((lam - EDGE_ML) / EDGE_W);
+    return { S: 1 - a, M: a - b, L: b }; // S + M + L === 1
+  }
+  const spdAt = (lam, lin) => { const w = coneBands(lam); return lin[0] * w.L + lin[1] * w.M + lin[2] * w.S; };
+  const lambdaOfFreq = f => LAM_MAX - (LAM_MAX - LAM_MIN) * Math.log(f / FMIN) / Math.log(FMAX / FMIN);
+  const freqOfLambda = lam => FMIN * Math.pow(FMAX / FMIN, (LAM_MAX - lam) / (LAM_MAX - LAM_MIN));
+
+  const srgbToLin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const powerDb = p => 10 * Math.log10(Math.max(p, 1e-6)); // −60 dB floor for readouts / fitting
+
+  // Envelope used by the synthesiser and the target curve (amplitude, not power).
+  const F_TOP = 22000;
+  function envelope(f, lin) {
+    const fc = Math.min(FMAX, Math.max(FMIN, f));
+    let m = Math.sqrt(spdAt(lambdaOfFreq(fc), lin));
+    if (f < FMIN) m *= (f / FMIN) * (f / FMIN);                                  // protect sub-20 Hz
+    if (f > FMAX) m *= f >= F_TOP ? 0 : 0.5 * (1 + Math.cos(Math.PI * (f - FMAX) / (F_TOP - FMAX)));
+    return m;
+  }
+
+  // ---------- Classic noises as reference targets (power in dB vs frequency) ----------
+  function aWeight(f) {
+    const f2 = f * f;
+    return 12194 ** 2 * f2 * f2 / ((f2 + 20.6 ** 2) * Math.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2)) * (f2 + 12194 ** 2));
+  }
+  const A1K = aWeight(1000);
+  const CLASSICS = [
+    { name: 'White',  db: f => 0 },
+    { name: 'Pink',   db: f => -10 * Math.log10(f / 1000) },              // −3 dB / octave
+    { name: 'Brown',  db: f => -20 * Math.log10(f / 1000) },              // −6 dB / octave
+    { name: 'Blue',   db: f => +10 * Math.log10(f / 1000) },              // +3 dB / octave
+    { name: 'Violet', db: f => +20 * Math.log10(f / 1000) },              // +6 dB / octave
+    { name: 'Grey',   db: f => Math.min(24, 20 * Math.log10(A1K / aWeight(f))) }, // inverse A-weighting
+  ];
+  const FIT_F = Array.from({ length: 61 }, (_, i) => FMIN * Math.pow(FMAX / FMIN, i / 60));
+  // RMS dB error between the colour's spectrum and a target curve, with the overall level free.
+  function fitError(lin, target) {
+    let sum = 0, sum2 = 0;
+    const diffs = FIT_F.map(f => powerDb(spdAt(lambdaOfFreq(f), lin)) - target(f));
+    for (const d of diffs) sum += d;
+    const mean = sum / diffs.length;
+    for (const d of diffs) sum2 += (d - mean) * (d - mean);
+    return Math.sqrt(sum2 / diffs.length);
+  }
+  // Best-fitting fully bright colour for each classic, by exhaustive search over hue × saturation.
+  function fitClassics() {
+    return CLASSICS.map(c => {
+      let best = { err: Infinity };
+      for (let h = 0; h < 360; h += 2) for (let s = 0; s <= 1.0001; s += 0.02) {
+        const rgb = hsvToRgb(h, s, 1);
+        const err = fitError(rgb.map(srgbToLin), c.db);
+        if (err < best.err) best = { err, h, sat: s, rgb };
+      }
+      return { ...c, ...best, hex: toHex(best.rgb) };
+    });
+  }
+
+  // ---------- Colour maths ----------
+  function hsvToRgb(h, s, v) {
+    h = ((h % 360) + 360) % 360;
+    const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+    let r, g, b;
+    if (h < 60) [r, g, b] = [c, x, 0]; else if (h < 120) [r, g, b] = [x, c, 0];
+    else if (h < 180) [r, g, b] = [0, c, x]; else if (h < 240) [r, g, b] = [0, x, c];
+    else if (h < 300) [r, g, b] = [x, 0, c]; else [r, g, b] = [c, 0, x];
+    return [r + m, g + m, b + m].map(u => Math.round(u * 255));
+  }
+  function rgbToHsv(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let h = 0;
+    if (d > 0) {
+      if (max === r) h = 60 * (((g - b) / d) % 6);
+      else if (max === g) h = 60 * ((b - r) / d + 2);
+      else h = 60 * ((r - g) / d + 4);
+      if (h < 0) h += 360;
+    }
+    return { h, sat: max === 0 ? 0 : d / max, val: max };
+  }
+  const toHex = rgb => '#' + rgb.map(c => c.toString(16).padStart(2, '0')).join('');
+  // Approximate display colour of a monochromatic wavelength (for the light-spectrum strip only).
+  function wavelengthRgb(l) {
+    let r = 0, g = 0, b = 0;
+    if (l < 440)      { r = -(l - 440) / 60; b = 1; }
+    else if (l < 490) { g = (l - 440) / 50; b = 1; }
+    else if (l < 510) { g = 1; b = -(l - 510) / 20; }
+    else if (l < 580) { r = (l - 510) / 70; g = 1; }
+    else if (l < 645) { r = 1; g = -(l - 645) / 65; }
+    else              { r = 1; }
+    const fade = l < 420 ? 0.3 + 0.7 * (l - 380) / 40 : l > 700 ? 0.3 + 0.7 * (780 - l) / 80 : 1;
+    return [r, g, b].map(c => Math.round(255 * Math.pow(c * fade, 0.8)));
+  }
+
+  // ---------- State ----------
+  let hue = 0, sat = 0, val = 1;
+  let state = null;
+  const REFS = fitClassics();
+  const SNAP = 0.04;
+
+  function describe(h, s, v) {
+    const rgb = hsvToRgb(h, s, v), lin = rgb.map(srgbToLin);
+    // readout = actual envelope power at the centre of each band (geometric centre in frequency)
+    const at = lam => powerDb(spdAt(lam, lin));
+    const bandDb = { bass: at((LAM_MAX + EDGE_ML) / 2), mids: at((EDGE_ML + EDGE_SM) / 2), treble: at((EDGE_SM + LAM_MIN) / 2) };
+    const peak = Math.max(bandDb.bass, bandDb.mids, bandDb.treble);
+    const rel = { bass: bandDb.bass - peak, mids: bandDb.mids - peak, treble: bandDb.treble - peak };
+
+    let name;
+    if (v < 0.005) name = 'Silence';
+    else {
+      const on = Object.entries(rel).filter(([, d]) => d > -1.5).map(([k]) => k);
+      const off = Object.entries(rel).filter(([, d]) => d <= -20).map(([k]) => k);
+      const soft = Object.entries(rel).filter(([, d]) => d <= -1.5 && d > -20).map(([k]) => k);
+      if (on.length === 3) name = 'Flat';
+      else {
+        const cap = w => w[0].toUpperCase() + w.slice(1);
+        name = cap(on.join(' + '));
+        if (soft.length) name += `, soft ${soft.join(' and ')}`;
+        if (off.length) name += `, no ${off.join(' or ')}`;
+      }
+    }
+    let closest = null;
+    if (v >= 0.005) {
+      for (const c of CLASSICS) { const err = fitError(lin, c.db); if (!closest || err < closest.err) closest = { name: c.name, err }; }
+    }
+    let ref = null;
+    for (const r of REFS) if (Math.abs(r.h - h) < 1 && Math.abs(r.sat - s) < 0.005 && v > 0.999) ref = r;
+    return { rgb, lin, bandDb, name, closest, ref, level: v };
+  }
+
+  // ---------- DSP ----------
+  const loopLength = sr => Math.min(1 << 20, 1 << Math.ceil(Math.log2(sr * 5)));
+  let phases = null;
+  function fft(re, im, inverse) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >> 1, ang = (inverse ? 2 : -2) * Math.PI / len;
+      const wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let j = 0; j < half; j++) {
+          const a = i + j, b = a + half;
+          const xr = re[b], xi = im[b];
+          const vr = xr * cr - xi * ci, vi = xr * ci + xi * cr;
+          re[b] = re[a] - vr; im[b] = im[a] - vi;
+          re[a] += vr;        im[a] += vi;
+          const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+        }
+      }
+    }
+    if (inverse) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  }
+  function renderNoise(ctx, st) {
+    const sr = ctx.sampleRate, N = loopLength(sr);
+    if (!phases || phases.length !== N / 2) {
+      phases = new Float32Array(N / 2);
+      for (let k = 0; k < phases.length; k++) phases[k] = Math.random() * 2 * Math.PI;
+    }
+    const buf = ctx.createBuffer(1, N, sr), d = buf.getChannelData(0);
+    // brightness-independent envelope (V=1 colour), level applied afterwards
+    const lin1 = hsvToRgb(hue, sat, 1).map(srgbToLin);
+    const re = new Float64Array(N), im = new Float64Array(N);
+    for (let k = 1; k < N / 2; k++) {
+      const m = envelope(k * sr / N, lin1);
+      const c = m * Math.cos(phases[k]), s = m * Math.sin(phases[k]);
+      re[k] = c; im[k] = s; re[N - k] = c; im[N - k] = -s;
+    }
+    fft(re, im, true);
+    let sum = 0, peak = 0;
+    for (let i = 0; i < N; i++) { const v = re[i]; sum += v * v; const a = Math.abs(v); if (a > peak) peak = a; }
+    if (sum < 1e-12) return buf; // black → silence
+    let gain = 0.16 / Math.sqrt(sum / N);
+    if (peak * gain > 0.95) gain = 0.95 / peak;
+    gain *= st.level;
+    for (let i = 0; i < N; i++) d[i] = re[i] * gain;
+    return buf;
+  }
+
+  // ---------- Audio graph ----------
+  let ac = null, master = null, analyser = null, current = null;
+  let playing = false, regenTimer = 0;
+  const XFADE = 0.25;
+  function ensureAudio() {
+    if (ac) return;
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain();
+    master.gain.value = volToGain(vol.value);
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.85;
+    master.connect(analyser);
+    analyser.connect(ac.destination);
+  }
+  function swapTo(buf) {
+    const t = ac.currentTime, g = ac.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1, t + XFADE);
+    const src = ac.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    src.connect(g); g.connect(master);
+    src.start(t, Math.random() * buf.duration);
+    if (current) fadeOut(current, t);
+    current = { src, gain: g };
+  }
+  function fadeOut(node, t) {
+    const gp = node.gain.gain;
+    gp.cancelScheduledValues(t);
+    gp.setValueAtTime(gp.value, t);
+    gp.linearRampToValueAtTime(0, t + XFADE);
+    node.src.stop(t + XFADE + 0.05);
+  }
+  function scheduleRegen() {
+    if (!playing) return;
+    clearTimeout(regenTimer);
+    regenTimer = setTimeout(() => swapTo(renderNoise(ac, state)), 110);
+  }
+  async function togglePlay() {
+    ensureAudio();
+    if (ac.state === 'suspended') await ac.resume();
+    playing = !playing;
+    playBtn.setAttribute('aria-pressed', String(playing));
+    playBtn.setAttribute('aria-label', playing ? 'Stop' : 'Play');
+    if (playing) { swapTo(renderNoise(ac, state)); requestAnimationFrame(drawAudio); }
+    else { clearTimeout(regenTimer); if (current) { fadeOut(current, ac.currentTime); current = null; } }
+  }
+
+  // ---------- UI ----------
+  const $ = id => document.getElementById(id);
+  const disc = $('disc'), handle = $('handle'), rim = $('rim'), dots = $('dots');
+  const valIn = $('val'), valOut = $('valOut');
+  const nameEl = $('name'), bandsEl = $('bands'), closestEl = $('closest'), swatch = $('swatch');
+  const hexIn = $('hex'), nativeIn = $('native'), hsvEl = $('hsv'), chipsEl = $('chips');
+  const playBtn = $('play'), vol = $('vol'), volOut = $('volOut');
+  const lightCv = $('light'), lightCtx = lightCv.getContext('2d');
+  const audioCv = $('audio'), audioCtx2d = audioCv.getContext('2d');
+
+  for (const [deg, text] of [[0, 'Red'], [60, 'Yellow'], [120, 'Green'], [180, 'Cyan'], [240, 'Blue'], [300, 'Magenta']]) {
+    const w = document.createElement('div');
+    w.className = 'rim-label';
+    const a = deg * Math.PI / 180;
+    w.style.setProperty('--ux', Math.sin(a).toFixed(4));
+    w.style.setProperty('--uy', (-Math.cos(a)).toFixed(4));
+    w.textContent = text;
+    rim.appendChild(w);
+  }
+  const discX = (h, s) => s * Math.sin(h * Math.PI / 180);
+  const discY = (h, s) => -s * Math.cos(h * Math.PI / 180);
+  const dotEls = [], chipEls = [];
+  for (const r of REFS) {
+    const d = document.createElement('div');
+    d.className = 'ref-dot';
+    d.style.left = `${50 + discX(r.h, r.sat) * 50}%`;
+    d.style.top = `${50 + discY(r.h, r.sat) * 50}%`;
+    d.title = `${r.name} noise ≈ ${r.hex} (±${r.err.toFixed(1)} dB)`;
+    dots.appendChild(d); dotEls.push(d);
+
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.setProperty('--c', r.hex);
+    b.innerHTML = `<i aria-hidden="true"></i>${r.name} <small>±${r.err.toFixed(1)} dB</small>`;
+    b.title = `The colour whose spectrum best matches ${r.name.toLowerCase()} noise: ${r.hex}`;
+    b.addEventListener('click', () => { setColour(r.h, r.sat, 1, false); disc.focus({ preventScroll: true }); });
+    chipsEl.appendChild(b); chipEls.push(b);
+  }
+
+  function setColour(h, s, v, snap) {
+    h = ((h % 360) + 360) % 360;
+    s = Math.min(1, Math.max(0, s));
+    v = Math.min(1, Math.max(0, v));
+    if (snap) {
+      const x = discX(h, s), y = discY(h, s);
+      for (const r of REFS) if (Math.hypot(discX(r.h, r.sat) - x, discY(r.h, r.sat) - y) < SNAP) { h = r.h; s = r.sat; break; }
+    }
+    hue = h; sat = s; val = v;
+    state = describe(h, s, v);
+
+    handle.style.left = `${50 + discX(h, s) * 50}%`;
+    handle.style.top = `${50 + discY(h, s) * 50}%`;
+    const hex = toHex(state.rgb);
+    document.documentElement.style.setProperty('--accent', `rgb(${state.rgb.join(' ')})`);
+    document.documentElement.style.setProperty('--hs', toHex(hsvToRgb(h, s, 1)));
+    if (document.activeElement !== hexIn) hexIn.value = hex;
+    nativeIn.value = hex;
+    if (document.activeElement !== valIn) valIn.value = Math.round(v * 100);
+    valOut.value = `${Math.round(v * 100)}%`;
+    hsvEl.textContent = `hue ${Math.round(h)}° · saturation ${Math.round(s * 100)}% · value ${Math.round(v * 100)}%`;
+
+    nameEl.textContent = state.name;
+    const fmt = x => { if (Math.abs(x) < 0.05) x = 0; return (x <= -60 ? '≤ −60' : (x > 0 ? '+' : '') + x.toFixed(1)) + ' dB'; };
+    const b = state.bandDb;
+    bandsEl.textContent = `bass ${fmt(b.bass)} · mids ${fmt(b.mids)} · treble ${fmt(b.treble)}`;
+    if (state.ref) closestEl.innerHTML = `Best available match for <b>${state.ref.name.toLowerCase()} noise</b>, within ±${state.ref.err.toFixed(1)} dB of the ideal curve.`;
+    else if (state.closest) closestEl.innerHTML = `Closest classic: <b>${state.closest.name.toLowerCase()} noise</b>, ±${state.closest.err.toFixed(1)} dB away.`;
+    else closestEl.textContent = 'Black is no light at all, so no sound.';
+    disc.setAttribute('aria-valuenow', String(Math.round(h)));
+    disc.setAttribute('aria-valuetext', `${hex}, ${state.name}, ${bandsEl.textContent}`);
+    REFS.forEach((r, i) => { dotEls[i].dataset.active = String(state.ref === r); chipEls[i].setAttribute('aria-current', String(state.ref === r)); });
+
+    drawLight();
+    if (!playing) drawAudio();
+    scheduleRegen();
+  }
+
+  // pointer
+  let dragging = false;
+  function fromPointer(e) {
+    const r = disc.getBoundingClientRect();
+    const x = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
+    const y = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+    setColour(Math.atan2(x, -y) * 180 / Math.PI, Math.hypot(x, y), val, true);
+  }
+  disc.addEventListener('pointerdown', e => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    dragging = true; disc.classList.add('dragging');
+    disc.setPointerCapture(e.pointerId);
+    disc.focus({ preventScroll: true });
+    fromPointer(e); e.preventDefault();
+  });
+  disc.addEventListener('pointermove', e => { if (dragging) fromPointer(e); });
+  const endDrag = () => { dragging = false; disc.classList.remove('dragging'); };
+  disc.addEventListener('pointerup', endDrag);
+  disc.addEventListener('pointercancel', endDrag);
+  disc.addEventListener('lostpointercapture', endDrag);
+  disc.addEventListener('keydown', e => {
+    const dh = e.shiftKey ? 15 : 3, ds = e.shiftKey ? 0.2 : 0.05, dv = e.shiftKey ? 0.2 : 0.05;
+    switch (e.key) {
+      case 'ArrowRight': setColour(hue + dh, sat, val, false); break;
+      case 'ArrowLeft':  setColour(hue - dh, sat, val, false); break;
+      case 'ArrowUp':    setColour(hue, sat + ds, val, false); break;
+      case 'ArrowDown':  setColour(hue, sat - ds, val, false); break;
+      case 'PageUp':     setColour(hue, sat, val + dv, false); break;
+      case 'PageDown':   setColour(hue, sat, val - dv, false); break;
+      case 'Home':       setColour(0, 0, 1, false); break;
+      case ' ': case 'Enter': togglePlay(); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+  valIn.addEventListener('input', () => setColour(hue, sat, valIn.value / 100, false));
+
+  function applyHex(v) {
+    const m = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(v.trim());
+    if (!m) return false;
+    let hex = m[1];
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const n = parseInt(hex, 16);
+    const { h, sat: s, val: vv } = rgbToHsv(n >> 16, (n >> 8) & 255, n & 255);
+    setColour(h, s, vv, false);
+    return true;
+  }
+  hexIn.addEventListener('input', () => applyHex(hexIn.value));
+  hexIn.addEventListener('change', () => { if (!applyHex(hexIn.value)) hexIn.value = toHex(state.rgb); });
+  hexIn.addEventListener('blur', () => { hexIn.value = toHex(state.rgb); });
+  nativeIn.addEventListener('input', () => applyHex(nativeIn.value));
+
+  playBtn.addEventListener('click', togglePlay);
+  function volToGain(v) { return Math.pow(v / 100, 2); }
+  vol.addEventListener('input', () => {
+    volOut.value = vol.value;
+    if (master) master.gain.setTargetAtTime(volToGain(vol.value), ac.currentTime, 0.02);
+  });
+
+  // ---------- Spectra display ----------
+  function sizeCanvas(cv, ctx) {
+    const dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  const xOf = (f, w) => Math.log(f / FMIN) / Math.log(FMAX / FMIN) * w;
+  const fOfX = (x, w) => FMIN * Math.pow(FMAX / FMIN, x / w);
+
+  function drawLight() {
+    const w = lightCv.clientWidth, h = lightCv.clientHeight;
+    const lin1 = hsvToRgb(hue, sat, 1).map(srgbToLin); // strip shows the spectrum shape; brightness dims it
+    lightCtx.clearRect(0, 0, w, h);
+    for (let x = 0; x < w; x++) {
+      const lam = lambdaOfFreq(fOfX(x + 0.5, w));
+      const p = spdAt(lam, lin1) * val;
+      const [r, g, b] = wavelengthRgb(lam);
+      const k = Math.pow(Math.max(0, Math.min(1, p)), 1 / 2.2);
+      lightCtx.fillStyle = `rgb(${Math.round(r * k)} ${Math.round(g * k)} ${Math.round(b * k)})`;
+      lightCtx.fillRect(x, 0, 1, h);
+    }
+  }
+
+  const DB_TOP = 3, DB_BOT = -63;
+  const yOfDb = (db, h) => (DB_TOP - Math.max(DB_BOT, Math.min(DB_TOP, db))) / (DB_TOP - DB_BOT) * h;
+  let specData = null;
+  function drawAudio() {
+    if (playing) requestAnimationFrame(drawAudio);
+    const w = audioCv.clientWidth, h = audioCv.clientHeight, c = audioCtx2d;
+    c.clearRect(0, 0, w, h);
+    c.strokeStyle = 'rgb(255 255 255 / 0.07)'; c.fillStyle = 'rgb(255 255 255 / 0.35)';
+    c.font = '11px system-ui, sans-serif'; c.lineWidth = 1;
+    for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
+      const x = Math.round(xOf(f, w)) + 0.5;
+      c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+      if ([100, 1000, 10000].includes(f)) c.fillText(f >= 1000 ? `${f / 1000}k` : String(f), x + 4, h - 6);
+    }
+    for (const db of [0, -20, -40, -60]) {
+      const y = Math.round(yOfDb(db, h)) + 0.5;
+      c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+      c.fillText(`${db} dB`, 4, db === 0 ? y + 12 : y - 3);
+    }
+    const col = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    // target: power of the (brightness-independent) envelope, normalised so its peak is 0 dB
+    const lin1 = hsvToRgb(hue, sat, 1).map(srgbToLin);
+    const peakDb = powerDb(Math.max(...lin1));
+    const target = new Float32Array(Math.ceil(w));
+    for (let x = 0; x < target.length; x++) target[x] = powerDb(spdAt(lambdaOfFreq(fOfX(x + 0.5, w)), lin1)) - peakDb;
+
+    if (playing && analyser) {
+      if (!specData || specData.length !== analyser.frequencyBinCount) specData = new Float32Array(analyser.frequencyBinCount);
+      analyser.getFloatFrequencyData(specData);
+      const binHz = ac.sampleRate / analyser.fftSize;
+      // level-align: median offset between live bins and target over 100 Hz – 10 kHz
+      const offs = [];
+      for (let i = 1; i < specData.length; i++) {
+        const f = i * binHz; if (f < 100 || f > 10000) continue;
+        const t = target[Math.min(target.length - 1, Math.floor(xOf(f, w)))];
+        if (t > -55 && isFinite(specData[i])) offs.push(t - specData[i]);
+      }
+      offs.sort((a, b) => a - b);
+      const off = offs.length ? offs[offs.length >> 1] : 0;
+      c.beginPath(); c.moveTo(0, h);
+      for (let i = 1; i < specData.length; i++) {
+        const f = i * binHz; if (f < FMIN) continue; if (f > FMAX) break;
+        c.lineTo(xOf(f, w), yOfDb(specData[i] + off, h));
+      }
+      c.lineTo(w, h); c.closePath();
+      c.fillStyle = `color-mix(in srgb, ${col} 30%, transparent)`;
+      c.strokeStyle = col; c.lineWidth = 1.2; c.fill(); c.stroke();
+    }
+    c.setLineDash([5, 4]); c.strokeStyle = playing ? 'rgb(255 255 255 / 0.85)' : col; c.lineWidth = 1.6;
+    c.beginPath();
+    for (let x = 0; x < target.length; x++) { const y = yOfDb(target[x], h); if (x === 0) c.moveTo(x, y); else c.lineTo(x, y); }
+    c.stroke(); c.setLineDash([]);
+  }
+
+  function layout() { sizeCanvas(lightCv, lightCtx); sizeCanvas(audioCv, audioCtx2d); drawLight(); if (!playing) drawAudio(); }
+  window.addEventListener('resize', layout);
+  sizeCanvas(lightCv, lightCtx); sizeCanvas(audioCv, audioCtx2d);
+  setColour(0, 0, 1, false);
+})();
+</script>
+</body>
+</html>

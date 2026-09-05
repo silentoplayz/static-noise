@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Static — spectrum first</title>
+<style>
+  :root {
+    --bg: #0e0f12; --panel: #171a1f; --ink: #e8e9ec; --muted: #8d919a;
+    --accent: rgb(255 255 255);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(60% 40% at 50% 20%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+      var(--bg);
+    transition: background 300ms linear;
+    display: grid; place-items: start center;
+    padding: 24px 16px;
+  }
+  main { width: 100%; min-width: 0; max-width: 860px; display: grid; gap: 18px; }
+  h1 { margin: 0; text-align: center; font-size: 1.15rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  h2 { margin: 0 0 6px; font-size: 0.78rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+
+  .block { display: grid; gap: 6px; }
+  .cap { display: flex; justify-content: space-between; gap: 12px; font-size: 0.75rem; color: var(--muted); padding: 0 2px; }
+  canvas { display: block; width: 100%; border-radius: 10px; background: var(--panel); }
+  canvas.editor { height: 240px; touch-action: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+  .block { user-select: none; -webkit-user-select: none; }
+  canvas.audio { height: 150px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.75rem; color: var(--muted); padding: 0 2px; }
+  .legend i { display: inline-block; width: 18px; border-top: 2px dashed var(--accent); vertical-align: middle; margin-right: 6px; }
+  .legend i.solid { border-top-style: solid; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 720px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+  .card { background: var(--panel); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button, .tools button {
+    font: inherit; font-size: 0.85rem; padding: 5px 11px; border-radius: 999px;
+    border: 1px solid rgb(255 255 255 / 0.12); background: rgb(255 255 255 / 0.04); color: var(--muted);
+    cursor: pointer; transition: color 120ms, border-color 120ms;
+  }
+  .chips button:hover, .chips button:focus-visible, .tools button:hover, .tools button:focus-visible { color: var(--ink); outline: none; }
+  .chips button[aria-current="true"] { color: var(--ink); border-color: var(--ink); }
+  .tools { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .slider { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
+  .slider input { width: 100%; accent-color: var(--accent); }
+  .slider output { font-variant-numeric: tabular-nums; min-width: 7ch; text-align: right; }
+  .sub { color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+
+  .ident { display: grid; grid-template-columns: 64px 1fr; gap: 14px; align-items: center; }
+  .swatch { width: 64px; height: 64px; border-radius: 14px; background: var(--accent);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2), 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .name { font-size: 1.2rem; font-weight: 600; line-height: 1.15; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .shares { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .share { background: rgb(255 255 255 / 0.04); border-radius: 8px; padding: 6px 8px; font-size: 0.85rem; }
+  .share b { display: block; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .share span { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .transport { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 12px; }
+  .play { width: 46px; height: 46px; border-radius: 50%; border: 0; background: var(--accent); color: #000;
+    display: grid; place-items: center; cursor: pointer; transition: transform 120ms; }
+  .play:hover { transform: scale(1.05); }
+  .play:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  .play svg { width: 20px; height: 20px; fill: currentColor; }
+  .play .stop { display: none; }
+  .play[aria-pressed="true"] .stop { display: block; }
+  .play[aria-pressed="true"] .go { display: none; }
+  .transport label { color: var(--muted); font-size: 0.9rem; }
+  .transport input { width: 100%; accent-color: var(--accent); }
+  .transport output { font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; color: var(--muted); font-size: 0.9rem; }
+  .hint { margin: 0; font-size: 0.8rem; color: var(--muted); text-align: center; max-width: 70ch; justify-self: center; }
+  kbd { font: inherit; font-size: 0.75rem; padding: 1px 5px; border-radius: 4px; background: rgb(255 255 255 / 0.08); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Static · spectrum first</h1>
+
+  <div class="block">
+    <div class="cap"><span>Spectral power · 3000 nm (near infrared)</span><span>visible 700–380 nm</span><span>100 nm (ultraviolet)</span></div>
+    <canvas class="editor" id="editor" aria-label="Spectral power distribution editor. Draw with the pointer to shape the spectrum."></canvas>
+    <div class="legend">
+      <span>Draw on the curve to reshape it. Level is dB relative to the peak, floor −90 dB.</span>
+      <span>Visible band shown in true hues; UV and IR in false colour.</span>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Blackbody (Planck's law)</h2>
+      <div class="slider">
+        <input type="range" id="temp" min="0" max="1000" value="647" aria-label="Blackbody temperature">
+        <output id="tempOut">5772 K</output>
+      </div>
+      <div class="sub" id="wien"></div>
+      <div class="chips" id="bbChips"></div>
+      <h2 style="margin-top:6px">Other sources</h2>
+      <div class="chips" id="srcChips"></div>
+      <div class="tools">
+        <button type="button" id="smooth">Smooth curve</button>
+        <button type="button" id="normalise">Re-normalise peak to 0 dB</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>What a human would see</h2>
+      <div class="ident">
+        <div class="swatch" id="swatch"></div>
+        <div>
+          <div class="name" id="name">White</div>
+          <div class="sub"><span class="mono" id="hex">#ffffff</span> · <span id="xy"></span></div>
+        </div>
+      </div>
+      <div class="shares">
+        <div class="share"><b id="shareUv">0%</b><span>ultraviolet</span></div>
+        <div class="share"><b id="shareVis">0%</b><span>visible</span></div>
+        <div class="share"><b id="shareIr">0%</b><span>infrared</span></div>
+      </div>
+      <div class="sub" id="note"></div>
+      <div class="transport">
+        <button class="play" id="play" type="button" aria-pressed="false" aria-label="Play">
+          <svg class="go" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="stop" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>
+        </button>
+        <label for="vol">Volume</label>
+        <input type="range" id="vol" min="0" max="100" value="45">
+        <output for="vol" id="volOut">45</output>
+      </div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="cap"><span>Sound spectrum · 20 Hz</span><span>20 kHz</span></div>
+    <canvas class="audio" id="audio" aria-label="Target and live audio spectrum"></canvas>
+    <div class="legend"><span><i></i>target from the light spectrum</span><span><i class="solid"></i>live output (level-aligned)</span></div>
+  </div>
+
+  <p class="hint">The wavelength axis (100–3000 nm, logarithmic) is laid onto the audible range (20 Hz–20 kHz, logarithmic),
+    long wavelength to low frequency, and the spectral power becomes the noise's power envelope.
+    Colour is computed from the spectrum with the CIE 1931 colour matching functions, so it is an output, not an input.
+    <kbd>Space</kbd> plays / stops when the editor has focus.</p>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Axes ----------
+  const L_MIN = 100, L_MAX = 3000;         // nm, window of the light spectrum
+  const FMIN = 20, FMAX = 20000;           // Hz
+  const NPTS = 512;                        // spectrum samples, uniform in log wavelength (= log frequency)
+  const DB_FLOOR = -90;
+  const VIS_LO = 380, VIS_HI = 700;
+  const lamOfIdx = i => L_MAX * Math.pow(L_MIN / L_MAX, i / (NPTS - 1));      // index 0 = 3000 nm (left)
+  const idxOfLam = l => Math.log(L_MAX / l) / Math.log(L_MAX / L_MIN) * (NPTS - 1);
+  const idxOfFreq = f => Math.log(f / FMIN) / Math.log(FMAX / FMIN) * (NPTS - 1);
+  const freqOfIdx = i => FMIN * Math.pow(FMAX / FMIN, i / (NPTS - 1));
+
+  // spectrum in dB (power) relative to peak
+  const spec = new Float32Array(NPTS).fill(0);
+  let activePreset = 'Flat';
+  function specAt(i) { // linear interpolation in index space
+    if (i <= 0) return spec[0];
+    if (i >= NPTS - 1) return spec[NPTS - 1];
+    const k = Math.floor(i), t = i - k;
+    return spec[k] + (spec[k + 1] - spec[k]) * t;
+  }
+  function normalise() {
+    let peak = -Infinity;
+    for (let i = 0; i < NPTS; i++) peak = Math.max(peak, spec[i]);
+    for (let i = 0; i < NPTS; i++) spec[i] = Math.max(DB_FLOOR, spec[i] - peak);
+  }
+
+  // ---------- Sources ----------
+  const C2 = 1.438776877e-2;               // hc/k in m·K (second radiation constant)
+  const WIEN_B = 2.897771955e-3;           // m·K
+  function planckDb(lamNm, T) {            // 10·log10 of spectral radiance vs wavelength, up to a constant
+    const lam = lamNm * 1e-9;
+    const x = C2 / (lam * T);
+    // log(exp(x) − 1): use x + log1p(−exp(−x)) to stay finite for large x
+    const logDen = x + Math.log1p(-Math.exp(-x));
+    return (10 / Math.LN10) * (-5 * Math.log(lam) - logDen);
+  }
+  function setBlackbody(T) {
+    for (let i = 0; i < NPTS; i++) spec[i] = planckDb(lamOfIdx(i), T);
+    normalise();
+  }
+  const SLOPES = { White: 0, Pink: -10, Brown: -20, Blue: 10, Violet: 20 }; // dB per decade of frequency
+  function aWeight(f) {
+    const f2 = f * f;
+    return 12194 ** 2 * f2 * f2 / ((f2 + 20.6 ** 2) * Math.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2)) * (f2 + 12194 ** 2));
+  }
+  const A1K = aWeight(1000);
+  function setClassic(name) {
+    for (let i = 0; i < NPTS; i++) {
+      const f = freqOfIdx(i);
+      spec[i] = name === 'Grey' ? Math.min(24, 20 * Math.log10(A1K / aWeight(f))) : SLOPES[name] * Math.log10(f / 1000);
+    }
+    normalise();
+  }
+  // Emission lines (nm). Positions are the standard air wavelengths; relative intensities are NOT modelled (all equal).
+  const LINES = {
+    Hydrogen: [121.57, 656.28, 486.13, 434.05, 410.17, 1875.1, 1281.8, 1093.8],   // Lyman α, Balmer α–δ, Paschen α–γ
+    Sodium:   [588.995, 589.592],                                                  // D2, D1
+    Mercury:  [253.65, 365.02, 404.66, 435.83, 546.07, 576.96, 579.07],
+  };
+  const LINE_SIGMA = (NPTS - 1) / 240;     // 1/24 octave of audio, so each line becomes a narrow noise band
+  function setLines(name) {
+    const lin = new Float64Array(NPTS).fill(Math.pow(10, DB_FLOOR / 10));
+    for (const l of LINES[name]) {
+      const c = idxOfLam(l);
+      for (let i = 0; i < NPTS; i++) { const d = (i - c) / LINE_SIGMA; lin[i] += Math.exp(-0.5 * d * d); }
+    }
+    for (let i = 0; i < NPTS; i++) spec[i] = 10 * Math.log10(lin[i]);
+    normalise();
+  }
+
+  // ---------- Colour from spectrum: CIE 1931 2° observer ----------
+  // Multi-lobe Gaussian fit of the colour matching functions (Wyman, Sloan & Shirley 2013).
+  const lobe = (l, mu, s1, s2) => { const t = (l - mu) / (l < mu ? s1 : s2); return Math.exp(-0.5 * t * t); };
+  const xBar = l => 1.056 * lobe(l, 599.8, 37.9, 31.0) + 0.362 * lobe(l, 442.0, 16.0, 26.7) - 0.065 * lobe(l, 501.1, 20.4, 26.2);
+  const yBar = l => 0.821 * lobe(l, 568.8, 46.9, 40.5) + 0.286 * lobe(l, 530.9, 16.3, 31.1);
+  const zBar = l => 1.217 * lobe(l, 437.0, 11.8, 36.0) + 0.681 * lobe(l, 459.0, 26.0, 13.4);
+  const gamma = c => c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  const toHex = rgb => '#' + rgb.map(c => Math.round(c * 255).toString(16).padStart(2, '0')).join('');
+
+  function analyse() {
+    // XYZ over the visible range, 1 nm steps
+    let X = 0, Y = 0, Z = 0;
+    for (let l = 380; l <= 780; l++) {
+      const p = Math.pow(10, specAt(idxOfLam(l)) / 10);
+      X += p * xBar(l); Y += p * yBar(l); Z += p * zBar(l);
+    }
+    // radiant power shares over the window; samples are uniform in log λ so dλ ∝ λ
+    let uv = 0, vis = 0, ir = 0;
+    for (let i = 0; i < NPTS; i++) {
+      const l = lamOfIdx(i), w = Math.pow(10, spec[i] / 10) * l;
+      if (l < VIS_LO) uv += w; else if (l > VIS_HI) ir += w; else vis += w;
+    }
+    const tot = uv + vis + ir;
+    const shares = { uv: uv / tot, vis: vis / tot, ir: ir / tot };
+
+    const sum = X + Y + Z;
+    if (sum <= 1e-9 * NPTS) return { rgb: [0, 0, 0], hex: '#000000', xy: null, shares, clipped: false, invisible: true };
+    const xy = [X / sum, Y / sum];
+    // XYZ → linear sRGB (D65)
+    let r = 3.2406 * X - 1.5372 * Y - 0.4986 * Z;
+    let g = -0.9689 * X + 1.8758 * Y + 0.0415 * Z;
+    let b = 0.0557 * X - 0.2040 * Y + 1.0570 * Z;
+    const mx = Math.max(r, g, b);
+    const clipped = Math.min(r, g, b) < -0.01 * mx;
+    r = Math.max(0, r) / mx; g = Math.max(0, g) / mx; b = Math.max(0, b) / mx;
+    const rgb = [r, g, b].map(gamma);
+    return { rgb, hex: toHex(rgb), xy, shares, clipped, invisible: false };
+  }
+  function colourName(a) {
+    if (a.invisible) return 'Invisible';
+    const [r, g, b] = a.rgb;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    if (d < 0.15) return 'White';   // equal-energy white is a touch warmer than sRGB's D65 white
+    let h = 0;
+    if (max === r) h = 60 * (((g - b) / d) % 6); else if (max === g) h = 60 * ((b - r) / d + 2); else h = 60 * ((r - g) / d + 4);
+    if (h < 0) h += 360;
+    const names = [[15, 'Red'], [45, 'Orange'], [70, 'Yellow'], [160, 'Green'], [200, 'Cyan'], [260, 'Blue'], [300, 'Violet'], [345, 'Magenta'], [360, 'Red']];
+    const base = names.find(([lim]) => h < lim)[1];
+    return (d < 0.35 ? 'Pale ' + base.toLowerCase() : base);
+  }
+
+  // ---------- Synthesis (fixed-phase spectral shaping, seamless loop) ----------
+  const F_TOP = 22000;
+  function envelope(f) {
+    const fc = Math.min(FMAX, Math.max(FMIN, f));
+    let m = Math.pow(10, specAt(idxOfFreq(fc)) / 20);
+    if (f < FMIN) m *= (f / FMIN) * (f / FMIN);
+    if (f > FMAX) m *= f >= F_TOP ? 0 : 0.5 * (1 + Math.cos(Math.PI * (f - FMAX) / (F_TOP - FMAX)));
+    return m;
+  }
+  const loopLength = sr => Math.min(1 << 20, 1 << Math.ceil(Math.log2(sr * 5)));
+  let phases = null;
+  function fft(re, im, inverse) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >> 1, ang = (inverse ? 2 : -2) * Math.PI / len;
+      const wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let j = 0; j < half; j++) {
+          const a = i + j, b = a + half;
+          const xr = re[b], xi = im[b];
+          const vr = xr * cr - xi * ci, vi = xr * ci + xi * cr;
+          re[b] = re[a] - vr; im[b] = im[a] - vi;
+          re[a] += vr;        im[a] += vi;
+          const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+        }
+      }
+    }
+    if (inverse) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  }
+  function renderNoise(ctx) {
+    const sr = ctx.sampleRate, N = loopLength(sr);
+    if (!phases || phases.length !== N / 2) {
+      phases = new Float32Array(N / 2);
+      for (let k = 0; k < phases.length; k++) phases[k] = Math.random() * 2 * Math.PI;
+    }
+    const re = new Float64Array(N), im = new Float64Array(N);
+    for (let k = 1; k < N / 2; k++) {
+      const m = envelope(k * sr / N);
+      const c = m * Math.cos(phases[k]), s = m * Math.sin(phases[k]);
+      re[k] = c; im[k] = s; re[N - k] = c; im[N - k] = -s;
+    }
+    fft(re, im, true);
+    let sum = 0, peak = 0;
+    for (let i = 0; i < N; i++) { const v = re[i]; sum += v * v; const a = Math.abs(v); if (a > peak) peak = a; }
+    const buf = ctx.createBuffer(1, N, sr), d = buf.getChannelData(0);
+    if (sum < 1e-12) return buf;
+    let gain = 0.16 / Math.sqrt(sum / N);
+    if (peak * gain > 0.95) gain = 0.95 / peak;
+    for (let i = 0; i < N; i++) d[i] = re[i] * gain;
+    return buf;
+  }
+
+  // ---------- Audio graph ----------
+  let ac = null, master = null, analyser = null, current = null, playing = false, regenTimer = 0;
+  const XFADE = 0.25;
+  function ensureAudio() {
+    if (ac) return;
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain(); master.gain.value = volToGain(vol.value);
+    analyser = ac.createAnalyser(); analyser.fftSize = 32768; analyser.smoothingTimeConstant = 0.8; // fine bins so narrow lines display cleanly
+    master.connect(analyser); analyser.connect(ac.destination);
+  }
+  function swapTo(buf) {
+    const t = ac.currentTime, g = ac.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + XFADE);
+    const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+    src.connect(g); g.connect(master); src.start(t, Math.random() * buf.duration);
+    if (current) fadeOut(current, t);
+    current = { src, gain: g };
+  }
+  function fadeOut(node, t) {
+    const gp = node.gain.gain;
+    gp.cancelScheduledValues(t); gp.setValueAtTime(gp.value, t); gp.linearRampToValueAtTime(0, t + XFADE);
+    node.src.stop(t + XFADE + 0.05);
+  }
+  function scheduleRegen() {
+    if (!playing) return;
+    clearTimeout(regenTimer);
+    regenTimer = setTimeout(() => swapTo(renderNoise(ac)), 120);
+  }
+  async function togglePlay() {
+    ensureAudio();
+    if (ac.state === 'suspended') await ac.resume();
+    playing = !playing;
+    playBtn.setAttribute('aria-pressed', String(playing));
+    playBtn.setAttribute('aria-label', playing ? 'Stop' : 'Play');
+    if (playing) { swapTo(renderNoise(ac)); requestAnimationFrame(drawAudio); }
+    else { clearTimeout(regenTimer); if (current) { fadeOut(current, ac.currentTime); current = null; } }
+  }
+
+  // ---------- UI ----------
+  const $ = id => document.getElementById(id);
+  const editor = $('editor'), ed = editor.getContext('2d');
+  const audioCv = $('audio'), au = audioCv.getContext('2d');
+  const tempIn = $('temp'), tempOut = $('tempOut'), wienEl = $('wien');
+  const playBtn = $('play'), vol = $('vol'), volOut = $('volOut');
+  const swatch = $('swatch'), nameEl = $('name'), hexEl = $('hex'), xyEl = $('xy'), noteEl = $('note');
+
+  const T_MIN = 1000, T_MAX = 30000;
+  const tempOfSlider = v => T_MIN * Math.pow(T_MAX / T_MIN, v / 1000);
+  const sliderOfTemp = T => Math.round(1000 * Math.log(T / T_MIN) / Math.log(T_MAX / T_MIN));
+  const BODIES = [['Candle', 1850], ['Bulb', 2700], ['Sun', 5772], ['Sirius', 9940], ['Rigel', 12100], ['O star', 30000]];
+  const chipEls = [];
+  function chip(parent, label, onClick, title) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = label; if (title) b.title = title;
+    b.addEventListener('click', onClick);
+    parent.appendChild(b); chipEls.push([label, b]);
+    return b;
+  }
+  for (const [label, T] of BODIES) chip($('bbChips'), `${label} ${T.toLocaleString()} K`, () => setTemp(T));
+  for (const n of ['White', 'Pink', 'Brown', 'Blue', 'Violet', 'Grey']) chip($('srcChips'), n, () => { setClassic(n); commit(n); }, `${n} noise, exact`);
+  for (const n of Object.keys(LINES)) chip($('srcChips'), `${n} lines`, () => { setLines(n); commit(`${n} lines`); }, 'Emission lines; positions exact, intensities equal');
+  $('smooth').addEventListener('click', () => {
+    const c = Float32Array.from(spec);
+    for (let i = 0; i < NPTS; i++) { let s = 0, n = 0; for (let k = -4; k <= 4; k++) { const j = i + k; if (j >= 0 && j < NPTS) { s += c[j]; n++; } } spec[i] = s / n; }
+    normalise(); commit('Custom');
+  });
+  $('normalise').addEventListener('click', () => { normalise(); commit(activePreset); });
+
+  function setTemp(T) { tempIn.value = sliderOfTemp(T); applyTemp(T); } // exact T, slider only approximates it
+  function applyTemp(T) {
+    setBlackbody(T);
+    tempOut.value = `${Math.round(T).toLocaleString()} K`;
+    const peak = WIEN_B / T * 1e9;
+    wienEl.textContent = `Wien peak at ${peak >= 1000 ? (peak / 1000).toFixed(2) + ' µm' : Math.round(peak) + ' nm'}` +
+      (peak > VIS_HI ? ' (infrared)' : peak < VIS_LO ? ' (ultraviolet)' : ' (visible)');
+    const body = BODIES.find(([, bt]) => Math.abs(bt - T) < 0.5);
+    commit(body ? `${body[0]} ${body[1].toLocaleString()} K` : `Blackbody ${Math.round(T)} K`);
+  }
+  tempIn.addEventListener('input', () => applyTemp(tempOfSlider(+tempIn.value)));
+
+  function commit(presetName) {
+    activePreset = presetName;
+    const a = analyse();
+    document.documentElement.style.setProperty('--accent', a.hex);
+    nameEl.textContent = colourName(a);
+    hexEl.textContent = a.hex;
+    xyEl.textContent = a.xy ? `xy ${a.xy[0].toFixed(3)}, ${a.xy[1].toFixed(3)}` : 'no visible light';
+    const pct = v => v < 0.0005 && v > 0 ? '<0.1%' : `${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%`;
+    $('shareUv').textContent = pct(a.shares.uv); $('shareVis').textContent = pct(a.shares.vis); $('shareIr').textContent = pct(a.shares.ir);
+    noteEl.textContent = a.invisible ? 'No power in the visible band: this light cannot be seen at all.'
+      : a.clipped ? 'Colour is outside the sRGB gamut; shown clipped to the nearest displayable colour.'
+      : 'Colour is chromaticity only: what this light looks like when bright enough to see.';
+    for (const [label, b] of chipEls) b.setAttribute('aria-current', String(label === presetName));
+    drawEditor();
+    if (!playing) drawAudio();
+    scheduleRegen();
+  }
+
+  // ---------- Editor canvas ----------
+  const ED_TOP = 6, ED_BOT = DB_FLOOR - 6;
+  function sizeCanvas(cv, ctx) {
+    const dpr = window.devicePixelRatio || 1, r = cv.getBoundingClientRect();
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  const xOfIdx = (i, w) => i / (NPTS - 1) * w;
+  const idxOfX = (x, w) => x / w * (NPTS - 1);
+  const yOfDb = (db, h, top = ED_TOP, bot = ED_BOT) => (top - Math.max(bot, Math.min(top, db))) / (top - bot) * h;
+  const dbOfY = (y, h, top = ED_TOP, bot = ED_BOT) => top - y / h * (top - bot);
+
+  function wavelengthRgb(l) {
+    let r = 0, g = 0, b = 0;
+    if (l < 440)      { r = -(l - 440) / 60; b = 1; }
+    else if (l < 490) { g = (l - 440) / 50; b = 1; }
+    else if (l < 510) { g = 1; b = -(l - 510) / 20; }
+    else if (l < 580) { r = (l - 510) / 70; g = 1; }
+    else if (l < 645) { r = 1; g = -(l - 645) / 65; }
+    else              { r = 1; }
+    const fade = l < 420 ? 0.3 + 0.7 * (l - 380) / 40 : l > 700 ? 0.3 + 0.7 * (780 - l) / 80 : 1;
+    return [r, g, b].map(c => Math.pow(Math.max(0, c) * fade, 0.8));
+  }
+  function bandColour(l) { // true hues in the visible band, false colour outside
+    if (l >= VIS_LO && l <= VIS_HI) return wavelengthRgb(l);
+    if (l > VIS_HI) return [0.75, 0.2, 0.15];     // IR: dull red
+    return [0.55, 0.3, 0.95];                      // UV: purple
+  }
+  function drawEditor() {
+    const w = editor.clientWidth, h = editor.clientHeight;
+    ed.clearRect(0, 0, w, h);
+    // filled spectrum, coloured by wavelength band, dimmed by level
+    for (let x = 0; x < w; x++) {
+      const i = idxOfX(x + 0.5, w), l = lamOfIdx(i), db = specAt(i);
+      const [r, g, b] = bandColour(l);
+      const k = 0.25 + 0.75 * Math.max(0, Math.min(1, 1 + db / 90));
+      ed.fillStyle = `rgb(${Math.round(r * 255 * k)} ${Math.round(g * 255 * k)} ${Math.round(b * 255 * k)})`;
+      ed.fillRect(x, yOfDb(db, h), 1, h);
+    }
+    // band boundaries + ticks
+    ed.font = '11px system-ui, sans-serif'; ed.lineWidth = 1;
+    for (const [l, label] of [[2000, '2 µm'], [1000, '1 µm'], [VIS_HI, '700'], [500, '500'], [VIS_LO, '380'], [200, '200']]) {
+      const x = Math.round(xOfIdx(idxOfLam(l), w)) + 0.5;
+      ed.strokeStyle = (l === VIS_LO || l === VIS_HI) ? 'rgb(255 255 255 / 0.5)' : 'rgb(255 255 255 / 0.12)';
+      ed.beginPath(); ed.moveTo(x, 0); ed.lineTo(x, h); ed.stroke();
+      ed.fillStyle = 'rgb(255 255 255 / 0.6)'; ed.fillText(label, x + 4, h - 6);
+    }
+    for (const db of [0, -30, -60]) {
+      const y = Math.round(yOfDb(db, h)) + 0.5;
+      ed.strokeStyle = 'rgb(255 255 255 / 0.12)'; ed.beginPath(); ed.moveTo(0, y); ed.lineTo(w, y); ed.stroke();
+      ed.fillStyle = 'rgb(255 255 255 / 0.6)'; ed.fillText(`${db} dB`, 4, db === 0 ? y + 12 : y - 3);
+    }
+    ed.fillStyle = 'rgb(255 255 255 / 0.55)';
+    ed.fillText('INFRARED (false colour)', xOfIdx(idxOfLam(1500), w) - 60, 14);
+    ed.fillText('VISIBLE', xOfIdx(idxOfLam(520), w) - 20, 14);
+    ed.fillText('UV (false colour)', xOfIdx(idxOfLam(180), w) - 40, 14);
+    // curve
+    ed.strokeStyle = '#fff'; ed.lineWidth = 1.6; ed.beginPath();
+    for (let x = 0; x <= w; x++) { const y = yOfDb(specAt(idxOfX(x, w)), h); if (x === 0) ed.moveTo(x, y); else ed.lineTo(x, y); }
+    ed.stroke();
+  }
+
+  // drawing with the pointer
+  let drawing = false, last = null;
+  function paint(e) {
+    const r = editor.getBoundingClientRect();
+    const i = Math.max(0, Math.min(NPTS - 1, idxOfX(e.clientX - r.left, r.width)));
+    const db = Math.max(DB_FLOOR, Math.min(0, dbOfY(e.clientY - r.top, r.height)));
+    if (last) {
+      const [i0, d0] = last, a = Math.min(i0, i), b = Math.max(i0, i);
+      for (let k = Math.round(a); k <= Math.round(b); k++) {
+        const t = b === a ? 0 : (k - i0) / (i - i0);
+        spec[k] = d0 + (db - d0) * Math.max(0, Math.min(1, t));
+      }
+    } else spec[Math.round(i)] = db;
+    last = [i, db];
+    commit('Custom');
+  }
+  editor.addEventListener('pointerdown', e => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    drawing = true; last = null; editor.setPointerCapture(e.pointerId); editor.focus?.(); paint(e); e.preventDefault();
+  });
+  editor.addEventListener('pointermove', e => { if (drawing) paint(e); });
+  const stop = () => { drawing = false; last = null; };
+  editor.addEventListener('pointerup', stop); editor.addEventListener('pointercancel', stop); editor.addEventListener('lostpointercapture', stop);
+  editor.tabIndex = 0;
+  editor.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { togglePlay(); e.preventDefault(); } });
+
+  // ---------- Audio canvas ----------
+  const A_TOP = 3, A_BOT = -63;
+  let specData = null;
+  function drawAudio() {
+    if (playing) requestAnimationFrame(drawAudio);
+    const w = audioCv.clientWidth, h = audioCv.clientHeight, c = au;
+    c.clearRect(0, 0, w, h);
+    c.strokeStyle = 'rgb(255 255 255 / 0.07)'; c.fillStyle = 'rgb(255 255 255 / 0.35)'; c.font = '11px system-ui, sans-serif'; c.lineWidth = 1;
+    for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
+      const x = Math.round(xOfIdx(idxOfFreq(f), w)) + 0.5;
+      c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+      if ([100, 1000, 10000].includes(f)) c.fillText(f >= 1000 ? `${f / 1000}k` : String(f), x + 4, h - 6);
+    }
+    for (const db of [0, -20, -40, -60]) {
+      const y = Math.round(yOfDb(db, h, A_TOP, A_BOT)) + 0.5;
+      c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+      c.fillText(`${db} dB`, 4, db === 0 ? y + 12 : y - 3);
+    }
+    const col = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    const target = new Float32Array(Math.ceil(w) + 1);
+    for (let x = 0; x < target.length; x++) target[x] = specAt(idxOfX(x, w));
+    if (playing && analyser) {
+      if (!specData || specData.length !== analyser.frequencyBinCount) specData = new Float32Array(analyser.frequencyBinCount);
+      analyser.getFloatFrequencyData(specData);
+      const binHz = ac.sampleRate / analyser.fftSize, offs = [];
+      for (let i = 1; i < specData.length; i++) {
+        const f = i * binHz; if (f < 100 || f > 10000) continue;
+        const t = target[Math.min(target.length - 1, Math.round(xOfIdx(idxOfFreq(f), w)))];
+        if (t > -55 && isFinite(specData[i])) offs.push(t - specData[i]);
+      }
+      offs.sort((a, b) => a - b);
+      const off = offs.length ? offs[offs.length >> 1] : 0;
+      c.beginPath(); c.moveTo(0, h);
+      for (let i = 1; i < specData.length; i++) {
+        const f = i * binHz; if (f < FMIN) continue; if (f > FMAX) break;
+        c.lineTo(xOfIdx(idxOfFreq(f), w), yOfDb(specData[i] + off, h, A_TOP, A_BOT));
+      }
+      c.lineTo(w, h); c.closePath();
+      c.fillStyle = `color-mix(in srgb, ${col} 30%, transparent)`; c.strokeStyle = col; c.lineWidth = 1.2; c.fill(); c.stroke();
+    }
+    c.setLineDash([5, 4]); c.strokeStyle = playing ? 'rgb(255 255 255 / 0.85)' : col; c.lineWidth = 1.6; c.beginPath();
+    for (let x = 0; x < target.length; x++) { const y = yOfDb(target[x], h, A_TOP, A_BOT); if (x === 0) c.moveTo(x, y); else c.lineTo(x, y); }
+    c.stroke(); c.setLineDash([]);
+  }
+
+  playBtn.addEventListener('click', togglePlay);
+  function volToGain(v) { return Math.pow(v / 100, 2); }
+  vol.addEventListener('input', () => { volOut.value = vol.value; if (master) master.gain.setTargetAtTime(volToGain(vol.value), ac.currentTime, 0.02); });
+
+  function layout() { sizeCanvas(editor, ed); sizeCanvas(audioCv, au); drawEditor(); if (!playing) drawAudio(); }
+  window.addEventListener('resize', layout);
+  sizeCanvas(editor, ed); sizeCanvas(audioCv, au);
+  setTemp(5772); // start on the Sun
+})();
+</script>
+</body>
+</html>

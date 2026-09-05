@@ -8,6 +8,8 @@ Or open `index.html` in any modern browser. Nothing to install, nothing fetched.
 
 ![Static: colour picker mode with the pink-noise fit selected, the light spectrum it produces, and the live sound spectrum tracking the target](assets/screenshot.png)
 
+![Static: spectrum mode showing the Sun's 5,772 K blackbody curve across infrared, visible and ultraviolet, and the sound it makes](assets/screenshot-spectrum.png)
+
 ## The model
 
 One spectrum drives everything: a spectral power distribution (SPD) over

@@ -6,6 +6,8 @@ A single-file, dependency-free noise generator that turns light into sound.
 
 Or open `index.html` in any modern browser. Nothing to install, nothing fetched.
 
+![Static: colour picker mode with the pink-noise fit selected, the light spectrum it produces, and the live sound spectrum tracking the target](assets/screenshot.png)
+
 ## The model
 
 One spectrum drives everything: a spectral power distribution (SPD) over

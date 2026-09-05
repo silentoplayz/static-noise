@@ -10,6 +10,8 @@ Or open `index.html` in any modern browser. Nothing to install, nothing fetched.
 
 ![Static: spectrum mode showing the Sun's 5,772 K blackbody curve across infrared, visible and ultraviolet, and the sound it makes](assets/screenshot-spectrum.png)
 
+![Static: spectrum mode with hydrogen's emission lines, from Lyman-alpha in the ultraviolet through the Balmer series to the Paschen lines in the infrared, each becoming a narrow band of noise](assets/screenshot-hydrogen.png)
+
 ## The model
 
 One spectrum drives everything: a spectral power distribution (SPD) over
